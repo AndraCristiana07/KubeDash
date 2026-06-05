@@ -4,21 +4,24 @@ export default function App() {
   const [status, setStatus] = useState<"Healthy" | "Degraded">("Healthy");
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}> KubeDash Workspace</h1>
-      <p style={styles.text}>Responsive engine</p>
+    <div className="font-sans text-slate-50 text-center p-8 bg-slate-900 min-h-screen">
+      <h1 className="text-3xl font-bold text-sky-400 mb-2">
+        KubeDash Workspace
+      </h1>
+      <p className="text-slate-400 mb-6 text-sm">Responsive engine</p>
 
+      {/* Status Badge */}
       <div
-        style={{
-          ...styles.badge,
-          backgroundColor: status === "Healthy" ? "#10b981" : "#ef4444",
-        }}
+        className={`inline-block px-4 py-2 rounded-full font-bold text-white mb-6 transition-colors duration-300 ${
+          status === "Healthy" ? "bg-emerald-600" : "bg-rose-600"
+        }`}
       >
         Cluster Status: {status}
       </div>
 
+      {/* Control Button */}
       <button
-        style={styles.button}
+        className="block mx-auto px-5 py-2.5 bg-slate-800 text-slate-100 border border-slate-600 rounded-md cursor-pointer font-bold transition-all hover:bg-slate-700 hover:border-slate-500 active:scale-98"
         onClick={() =>
           setStatus((prev) => (prev === "Healthy" ? "Degraded" : "Healthy"))
         }
@@ -28,33 +31,3 @@ export default function App() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    fontFamily: "sans-serif",
-    color: "#f8fafc",
-    padding: "32px",
-    textAlign: "center",
-  },
-  title: { color: "#38bdf8", marginBottom: "8px" },
-  text: { color: "#94a3b8", marginBottom: "24px" },
-  badge: {
-    display: "inline-block",
-    padding: "8px 16px",
-    borderRadius: "20px",
-    fontWeight: "bold",
-    marginBottom: "24px",
-    transition: "0.3s",
-  },
-  button: {
-    display: "block",
-    margin: "0 auto",
-    padding: "10px 20px",
-    backgroundColor: "#1e293b",
-    color: "#f1f5f9",
-    border: "1px solid #475569",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-};
