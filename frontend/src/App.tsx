@@ -6,9 +6,7 @@ export default function App() {
   return (
     <div style={styles.container}>
       <h1 style={styles.title}> KubeDash Workspace</h1>
-      <p style={styles.text}>
-        React + TypeScript engine is completely responsive.
-      </p>
+      <p style={styles.text}>Responsive engine</p>
 
       <div
         style={{
