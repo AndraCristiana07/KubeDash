@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,9 +19,23 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// ref for Kubernetes client for routes
+var clientset *kubernetes.Clientset
+
 func main() {
 	// initialize Database
 	config.ConnectDatabase()
+
+	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
+	k8sConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to load kubeconfig: %v", err))
+	}
+
+	clientset, err = kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create K8s client: %v", err))
+	}
 
 	fmt.Println("Scanning Kubernetes for cluster pods...")
 	watchPods()
@@ -30,11 +45,25 @@ func main() {
 	// setup Gin Router
 	r := gin.Default()
 
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	// define Routes
 	api := r.Group("/api")
 	{
 		api.POST("/logs", controllers.CreateLog)
 		api.GET("/logs", controllers.GetLogs)
+		api.GET("/cluster/summary", getClusterSummary)
 	}
 
 	// start Server on port 8080
@@ -42,17 +71,6 @@ func main() {
 }
 
 func watchPods() {
-	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-
 	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -65,18 +83,6 @@ func watchPods() {
 }
 
 func watchEventsInBackground() {
-	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
-	k8sConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		log.Printf("Failed to load kubeconfig: %v\n", err)
-		return
-	}
-
-	clientset, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		log.Printf("Failed to create K8s client: %v\n", err)
-		return
-	}
 
 	fmt.Println("Real-time Kubernetes event stream is now LIVE!")
 
@@ -111,6 +117,31 @@ func watchEventsInBackground() {
 			fmt.Printf("Saved K8s Event: [%s] %s Namespace: %s\n", logEntry.Level, logEntry.Message, logEntry.Namespace)
 		}
 	}
+}
+func getClusterSummary(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	// total pod length count for all namespaces
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// active nodes count
+	nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"podsCount":  len(pods.Items),
+		"nodesTotal": len(nodes.Items),
+	})
 }
 
 func homeDir() string {
