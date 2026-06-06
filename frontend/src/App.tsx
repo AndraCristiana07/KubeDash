@@ -14,7 +14,6 @@ const GO_API =
   "http://localhost:8080";
 
 export default function App() {
-  const [status, setStatus] = useState<"Healthy" | "Degraded">("Healthy");
   const [activeTab, setActiveTab] = useState<"overview" | "settings">(
     "overview",
   );
@@ -22,15 +21,17 @@ export default function App() {
   const [podsCount, setPodsCount] = useState<number>(0);
   const [nodesTotal, setNodesTotal] = useState<number>(0);
   const [dbLogs, setDbLogs] = useState<ClusterLog[]>([]);
+  const [status, setStatus] = useState<string>("Healthy");
 
   useEffect(() => {
-    // fetch active cluster counts
+    // fetch active cluster counts and status
     const fetchClusterMetrics = async () => {
       try {
         const res = await fetch(`${GO_API}/api/cluster/summary`);
         const data = await res.json();
         setPodsCount(data.podsCount || 0);
         setNodesTotal(data.nodesTotal || 0);
+        setStatus(data.clusterStatus || "Healthy");
       } catch (err) {
         console.error("Failed fetching metrics from Go backend:", err);
       }
@@ -132,17 +133,6 @@ export default function App() {
                 Cluster Quick Actions
               </h3>
               <div className="flex flex-wrap gap-3">
-                <button
-                  className="px-4 py-2 text-xs font-bold bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-md cursor-pointer transition-all active:scale-95"
-                  onClick={() =>
-                    setStatus((prev) =>
-                      prev === "Healthy" ? "Degraded" : "Healthy",
-                    )
-                  }
-                >
-                  Toggle Incident Status
-                </button>
-
                 <button className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 rounded-md cursor-pointer transition-all active:scale-95 text-white">
                   + Deploy New Pod
                 </button>

@@ -137,10 +137,41 @@ func getClusterSummary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// cluster health based on pod States
+	clusterStatus := "Healthy"
+	for _, pod := range pods.Items {
+
+		// skip completed pods
+		if pod.Status.Phase == corev1.PodSucceeded {
+			continue
+		}
+
+		// pod in failed phase -> degrade the cluster
+		if pod.Status.Phase == corev1.PodFailed {
+			clusterStatus = "Degraded"
+			break
+		}
+
+		// check container statuses
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			if containerStatus.State.Waiting != nil {
+				reason := containerStatus.State.Waiting.Reason
+				if reason == "CrashLoopBackOff" || reason == "ImagePullBackOff" || reason == "ErrImagePull" {
+					clusterStatus = "Degraded"
+					break
+				}
+			}
+		}
+
+		if clusterStatus == "Degraded" {
+			break
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"podsCount":  len(pods.Items),
-		"nodesTotal": len(nodes.Items),
+		"podsCount":     len(pods.Items),
+		"nodesTotal":    len(nodes.Items),
+		"clusterStatus": clusterStatus,
 	})
 }
 
