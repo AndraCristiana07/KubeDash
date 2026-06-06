@@ -23,31 +23,42 @@ export default function App() {
   const [dbLogs, setDbLogs] = useState<ClusterLog[]>([]);
   const [status, setStatus] = useState<string>("Healthy");
 
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // fetch active cluster counts and status
+  const fetchClusterMetrics = async () => {
+    try {
+      const res = await fetch(`${GO_API}/api/cluster/summary`);
+      const data = await res.json();
+      setPodsCount(data.podsCount || 0);
+      setNodesTotal(data.nodesTotal || 0);
+      setStatus(data.clusterStatus || "Healthy");
+    } catch (err) {
+      console.error("Failed fetching metrics from Go backend:", err);
+    }
+  };
+
+  // fetch saved database logs
+  const fetchClusterLogs = async () => {
+    try {
+      const res = await fetch(`${GO_API}/api/logs`);
+      const json = await res.json();
+      setDbLogs(json.data || []);
+    } catch (err) {
+      console.error("Failed fetching logs from Go backend:", err);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+
+    await Promise.all([fetchClusterMetrics(), fetchClusterLogs()]);
+
+    // timeout so the user sees the loading feedback
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
   useEffect(() => {
-    // fetch active cluster counts and status
-    const fetchClusterMetrics = async () => {
-      try {
-        const res = await fetch(`${GO_API}/api/cluster/summary`);
-        const data = await res.json();
-        setPodsCount(data.podsCount || 0);
-        setNodesTotal(data.nodesTotal || 0);
-        setStatus(data.clusterStatus || "Healthy");
-      } catch (err) {
-        console.error("Failed fetching metrics from Go backend:", err);
-      }
-    };
-
-    // fetch saved database logs
-    const fetchClusterLogs = async () => {
-      try {
-        const res = await fetch(`${GO_API}/api/logs`);
-        const json = await res.json();
-        setDbLogs(json.data || []);
-      } catch (err) {
-        console.error("Failed fetching logs from Go backend:", err);
-      }
-    };
-
     fetchClusterMetrics();
     fetchClusterLogs();
 
@@ -137,8 +148,16 @@ export default function App() {
                   + Deploy New Pod
                 </button>
 
-                <button className="px-4 py-2 text-xs font-bold bg-slate-800 border border-slate-700 hover:bg-slate-600 rounded-md cursor-pointer transition-all text-slate-400">
-                  Refresh Metrics
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  className={`px-4 py-2 text-xs font-bold rounded-md border transition-all active:scale-95 cursor-pointer ${
+                    isRefreshing
+                      ? "bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed"
+                      : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                  }`}
+                >
+                  {isRefreshing ? "Refreshing..." : "Refresh Metrics"}
                 </button>
               </div>
             </div>
