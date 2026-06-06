@@ -1,10 +1,63 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+
+interface ClusterLog {
+  ID: number;
+  pod_name: string;
+  namespace: string;
+  message: string;
+  level: string;
+  CreatedAt: string;
+}
+
+const GO_API =
+  (typeof process !== "undefined" && process.env?.GO_API) ||
+  "http://localhost:8080";
 
 export default function App() {
   const [status, setStatus] = useState<"Healthy" | "Degraded">("Healthy");
   const [activeTab, setActiveTab] = useState<"overview" | "settings">(
     "overview",
   );
+
+  const [podsCount, setPodsCount] = useState<number>(0);
+  const [nodesTotal, setNodesTotal] = useState<number>(0);
+  const [dbLogs, setDbLogs] = useState<ClusterLog[]>([]);
+
+  useEffect(() => {
+    // fetch active cluster counts
+    const fetchClusterMetrics = async () => {
+      try {
+        const res = await fetch(`${GO_API}/api/cluster/summary`);
+        const data = await res.json();
+        setPodsCount(data.podsCount || 0);
+        setNodesTotal(data.nodesTotal || 0);
+      } catch (err) {
+        console.error("Failed fetching metrics from Go backend:", err);
+      }
+    };
+
+    // fetch saved database logs
+    const fetchClusterLogs = async () => {
+      try {
+        const res = await fetch(`${GO_API}/api/logs`);
+        const json = await res.json();
+        setDbLogs(json.data || []);
+      } catch (err) {
+        console.error("Failed fetching logs from Go backend:", err);
+      }
+    };
+
+    fetchClusterMetrics();
+    fetchClusterLogs();
+
+    // wait 4 seconds before trying again
+    const interval = setInterval(() => {
+      fetchClusterMetrics();
+      fetchClusterLogs();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
@@ -60,7 +113,7 @@ export default function App() {
                   Active Nodes
                 </div>
                 <div className="text-xl font-bold mt-1 text-slate-100">
-                  3 / 3
+                  {nodesTotal} / {nodesTotal || 1}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
@@ -68,7 +121,7 @@ export default function App() {
                   Total Workloads
                 </div>
                 <div className="text-xl font-bold mt-1 text-sky-400">
-                  12 Pods
+                  {podsCount} Pods
                 </div>
               </div>
             </div>
@@ -111,15 +164,38 @@ export default function App() {
               </div>
 
               {/* logs container Placeholder */}
-              <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-800 rounded-lg text-slate-500">
-                <span className="text-2xl mb-2">Logs</span>
-                <p className="text-xs font-mono">
-                  No live workloads fetched yet.
-                </p>
-                <p className="text-[11px] text-slate-600 mt-1">
-                  Go API endpoint linkages will display here.
-                </p>
-              </div>
+              {dbLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-800 rounded-lg text-slate-500">
+                  <span className="text-2xl mb-2">Logs</span>
+                  <p className="text-xs font-mono">
+                    No live workloads fetched yet.
+                  </p>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    Go API endpoint linkages will display here.
+                  </p>
+                </div>
+              ) : (
+                /* terminal forDB events */
+                <div className="bg-black border border-slate-800 rounded-lg p-4 font-mono text-xs max-h-60 overflow-y-auto space-y-1 text-emerald-400 shadow-inner">
+                  {dbLogs
+                    .slice()
+                    .reverse()
+                    .map((log, index) => (
+                      <div
+                        key={log.ID || index}
+                        className={`truncate py-0.5 ${log.level === "Warning" ? "text-amber-400" : "text-emerald-400"}`}
+                      >
+                        <span className="text-slate-500">
+                          [{log.namespace}]
+                        </span>{" "}
+                        <span className="text-sky-400 font-bold">
+                          {log.pod_name || "cluster"}:
+                        </span>{" "}
+                        {log.message}
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         ) : (
