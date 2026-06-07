@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import TerminalModal from "./Terminal";
 import LogStreamModal from "./LogStream";
+import toast, { Toaster } from "react-hot-toast";
 
 interface ClusterLog {
   ID: number;
@@ -22,6 +23,9 @@ interface PodEntry {
 const GO_API =
   (typeof process !== "undefined" && process.env?.GO_API) ||
   "http://localhost:8080";
+const WB =
+  (typeof process !== "undefined" && process.env?.REACT_WEBSOCKET) ||
+  "ws://localhost:8080";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"overview" | "settings" | "pods">(
@@ -179,6 +183,82 @@ export default function App() {
     }
   };
 
+  // notification socket
+  useEffect(() => {
+    const ws = new WebSocket(`${WB}/api/cluster/notifications`);
+
+    ws.onopen = () => {
+      console.log("Live Notification WebSocket Connected Successfully!");
+    };
+
+    ws.onmessage = (event) => {
+      console.log("Received event hunk data payload:", event.data);
+      try {
+        const clusterEvent = JSON.parse(event.data);
+        if (!clusterEvent.message) return;
+
+        const msgText = clusterEvent.message;
+        const namespaceText = clusterEvent.namespace || "default";
+        const podText = clusterEvent.pod_name || "Resource";
+        const levelText = clusterEvent.level || "";
+
+        const isWarning = levelText === "Warning";
+        const isErrorMsg =
+          msgText.toLowerCase().includes("fail") ||
+          msgText.toLowerCase().includes("backoff") ||
+          msgText.toLowerCase().includes("err");
+
+        if (isWarning || isErrorMsg) {
+          toast.custom(
+            (t) => (
+              <div
+                className={`${
+                  t.visible ? "animate-enter" : "animate-leave"
+                } max-w-md w-full bg-red-950 border border-red-500/30 shadow-2xl rounded-xl pointer-events-auto flex p-4 text-left`}
+              >
+                <div className="flex-1">
+                  <p className="text-xs font-mono font-bold text-red-400">
+                    ⚠️ CLUSTER WARNING ({namespaceText})
+                  </p>
+                  <p className="text-xs text-red-200 mt-1 font-semibold">
+                    Pod: {podText}
+                  </p>
+                  <p className="text-xs text-red-300/80 mt-1 line-clamp-3">
+                    {msgText}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toast.dismiss(t.id);
+                    toast.remove(t.id);
+                  }}
+                  className="flex items-center justify-center rounded-lg 
+                    p-1 text-red-400/60 hover:text-red-200 hover:bg-red-900/40 
+                    transition-all focus:outline-none"
+                  aria-label="Close notification"
+                >
+                  X
+                </button>
+              </div>
+            ),
+            { duration: 6000, id: `toast-${podText}` },
+          );
+        }
+      } catch (err) {
+        console.error("Failed parsing incoming alert package:", err);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("Notification Socket Error Encountered:", error);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [WB]);
+
   useEffect(() => {
     fetchClusterMetrics();
     fetchClusterLogs();
@@ -190,7 +270,9 @@ export default function App() {
       fetchClusterPods();
     }, refreshInterval);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, [refreshInterval, targetNamespace]);
 
   return (
@@ -668,6 +750,7 @@ export default function App() {
           onClose={() => setLogPod(null)}
         />
       )}
+      <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
 }

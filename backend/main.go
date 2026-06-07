@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -48,6 +49,11 @@ var upgrader = websocket.Upgrader{
 type wsStreamHandler struct {
 	wsConn *websocket.Conn
 }
+
+var (
+	notificationClients = make(map[*websocket.Conn]bool)
+	notificationMutex   sync.Mutex
+)
 
 func (w *wsStreamHandler) Read(p []byte) (n int, err error) {
 	_, msg, err := w.wsConn.ReadMessage()
@@ -114,6 +120,7 @@ func main() {
 		api.DELETE("/cluster/pods", deleteClusterPod)
 		api.GET("/cluster/ssh", handlePodSSH)
 		api.GET("/cluster/logs/stream", handlePodLogStream)
+		api.GET("/cluster/notifications", handleNotificationStream)
 	}
 
 	// start Server on port 8080
@@ -165,6 +172,34 @@ func watchEventsInBackground() {
 			log.Printf("Failed to save event to DB: %v\n", err)
 		} else {
 			fmt.Printf("Saved K8s Event: [%s] %s Namespace: %s\n", logEntry.Level, logEntry.Message, logEntry.Namespace)
+
+			// give cluster events across the WebSocket connections
+
+			messageText := logEntry.Message
+			isWarningType := logEntry.Level == "Warning"
+			hasErrorKeyword := containsErrorKeyword(messageText)
+
+			// Warning or Normal event signaling a clear failure
+			if isWarningType || hasErrorKeyword {
+				notificationMutex.Lock()
+
+				log.Printf("Broadcasting event! Current active clients in connection pool: %d", len(notificationClients))
+
+				for client := range notificationClients {
+					if hasErrorKeyword {
+						logEntry.Level = "Warning"
+					}
+					err := client.WriteJSON(logEntry)
+					if err != nil {
+						log.Printf("Client disconnected or broke during write: %v", err)
+						client.Close()
+						delete(notificationClients, client)
+					} else {
+						log.Printf("Successfully sent JSON packet payload over the socket pipe to browser!")
+					}
+				}
+				notificationMutex.Unlock()
+			}
 		}
 	}
 }
@@ -445,10 +480,82 @@ func handlePodLogStream(c *gin.Context) {
 
 }
 
+func handleNotificationStream(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("Notification socket upgrade failed: %v", err)
+		return
+	}
+
+	// add client session with Mutex protections
+	notificationMutex.Lock()
+	notificationClients[ws] = true
+	notificationMutex.Unlock()
+
+	// clean mapping context if connection faisl
+	defer func() {
+		notificationMutex.Lock()
+		delete(notificationClients, ws)
+		notificationMutex.Unlock()
+		ws.Close()
+		log.Println("Notification client connection cleaned up cleanly.")
+	}()
+
+	// infinite reading loop to detect disconnect events
+	for {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			break
+		}
+	}
+}
+
 func homeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic("could not determine home directory")
 	}
 	return home
+}
+
+func containsErrorKeyword(msg string) bool {
+	base := []string{"fail", "backoff", "error", "failed", "err"}
+	for _, word := range base {
+		if byteContainsIgnoreCase(msg, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func byteContainsIgnoreCase(s, substr string) bool {
+	// lowercase evaluation
+	lenSub := len(substr)
+	if lenSub == 0 {
+		return true
+	}
+	if len(s) < lenSub {
+		return false
+	}
+	// text search fallback loop
+	for i := 0; i <= len(s)-lenSub; i++ {
+		match := true
+		for j := 0; j < lenSub; j++ {
+			c1 := s[i+j]
+			c2 := substr[j]
+			if c1 >= 'A' && c1 <= 'Z' {
+				c1 += 32
+			}
+			if c2 >= 'A' && c2 <= 'Z' {
+				c2 += 32
+			}
+			if c1 != c2 {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
