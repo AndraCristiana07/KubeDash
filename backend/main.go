@@ -113,6 +113,7 @@ func main() {
 		api.GET("/cluster/pods", getClusterPods)
 		api.DELETE("/cluster/pods", deleteClusterPod)
 		api.GET("/cluster/ssh", handlePodSSH)
+		api.GET("/cluster/logs/stream", handlePodLogStream)
 	}
 
 	// start Server on port 8080
@@ -390,6 +391,58 @@ func handlePodSSH(c *gin.Context) {
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: "+err.Error()))
 	}
+}
+
+func handlePodLogStream(c *gin.Context) {
+	namespace := c.Query("namespace")
+	podName := c.Query("name")
+
+	if namespace == "" || podName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or name details"})
+		return
+	}
+
+	// upgrade HTTP request context to WebSocket connection
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade log socket connection: %v", err)
+		return
+	}
+	defer ws.Close()
+
+	// tail -f log optioms
+	lineLimit := int64(100) // last 100 from history
+	logOptions := &corev1.PodLogOptions{
+		Follow:     true, // keep it open
+		TailLines:  &lineLimit,
+		Timestamps: false,
+	}
+
+	// request the stream
+	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, logOptions)
+	stream, err := req.Stream(c.Request.Context())
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("Failed to open log stream: "+err.Error()))
+		return
+	}
+	defer stream.Close()
+
+	// read chunks from stream and push to WebSocker
+	buf := make([]byte, 4096)
+	for {
+		numBytes, err := stream.Read(buf)
+		if numBytes > 0 {
+			err = ws.WriteMessage(websocket.TextMessage, buf[:numBytes])
+			if err != nil {
+				// client closed the tab or disconnected
+				break
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+
 }
 
 func homeDir() string {

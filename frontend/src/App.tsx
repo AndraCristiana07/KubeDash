@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import TerminalModal from "./Terminal";
+import LogStreamModal from "./LogStream";
 
 interface ClusterLog {
   ID: number;
@@ -46,6 +47,7 @@ export default function App() {
   const [deletingPod, setDeletingPod] = useState<string | null>(null);
 
   const [sshPod, setSshPod] = useState<PodEntry | null>(null);
+  const [logPod, setLogPod] = useState<PodEntry | null>(null);
 
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
@@ -455,6 +457,15 @@ export default function App() {
                         <td className="p-4 text-center">
                           <div className="flex justify-center gap-2">
                             <button
+                              onClick={() => setLogPod(pod)}
+                              className="px-2 py-1 text-[10px] font-bold 
+                                text-amber-800 hover:text-white bg-amber-500/10 
+                                hover:bg-amber-600 border border-amber-500/20 
+                                rounded-md transition-all cursor-pointer"
+                            >
+                              Logs
+                            </button>
+                            <button
                               onClick={() => setSshPod(pod)}
                               className="px-2 py-1 text-[10px] font-bold 
                                 text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
@@ -648,6 +659,13 @@ export default function App() {
           podName={sshPod.name}
           namespace={sshPod.namespace}
           onClose={() => setSshPod(null)}
+        />
+      )}
+      {logPod && (
+        <LogStreamModal
+          podName={logPod.name}
+          namespace={logPod.namespace}
+          onClose={() => setLogPod(null)}
         />
       )}
     </div>
