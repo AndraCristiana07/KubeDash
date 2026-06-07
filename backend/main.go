@@ -27,6 +27,14 @@ type DeployPodRequest struct {
 	Image   string `json:"image" binding:"required"`
 }
 
+type PodTableEntry struct {
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+	Status     string `json:"status"`
+	Image      string `json:"image"`
+	Ageseconds int    `json:"age_seconds"`
+}
+
 func main() {
 	// initialize Database
 	config.ConnectDatabase()
@@ -70,6 +78,7 @@ func main() {
 		api.GET("/logs", controllers.GetLogs)
 		api.GET("/cluster/summary", getClusterSummary)
 		api.POST("/cluster/deploy", deployNewPod)
+		api.GET("/cluster/pods", getClusterPods)
 	}
 
 	// start Server on port 8080
@@ -230,6 +239,44 @@ func deployNewPod(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Pod specification deployed successfully!",
+	})
+}
+
+func getClusterPods(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	//read namespace target
+	nsFilter := c.Query("namespace")
+	if nsFilter == "all" || nsFilter == "*" || nsFilter == "" {
+		nsFilter = ""
+	}
+
+	// get pod
+	pods, err := clientset.CoreV1().Pods(nsFilter).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var podList []PodTableEntry
+	for _, pod := range pods.Items {
+		var image string = "unknown"
+		if len(pod.Status.ContainerStatuses) > 0 {
+			image = pod.Status.ContainerStatuses[0].Image
+		}
+		podList = append(podList,
+			PodTableEntry{
+				Name:       pod.Name,
+				Namespace:  pod.Namespace,
+				Status:     string(pod.Status.Phase),
+				Image:      image,
+				Ageseconds: int(time.Since(pod.CreationTimestamp.Time).Seconds()),
+			})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"pods": podList,
 	})
 }
 

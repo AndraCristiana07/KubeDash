@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactEventHandler } from "react";
+import React, { useState, useEffect } from "react";
 
 interface ClusterLog {
   ID: number;
@@ -9,12 +9,20 @@ interface ClusterLog {
   CreatedAt: string;
 }
 
+interface PodEntry {
+  name: string;
+  namespace: string;
+  status: string;
+  image: string;
+  age_seconds: number;
+}
+
 const GO_API =
   (typeof process !== "undefined" && process.env?.GO_API) ||
   "http://localhost:8080";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"overview" | "settings">(
+  const [activeTab, setActiveTab] = useState<"overview" | "settings" | "pods">(
     "overview",
   );
 
@@ -32,6 +40,29 @@ export default function App() {
 
   const [refreshInterval, setRefreshInterval] = useState<number>(4000);
   const [targetNamespace, setTargetNamespace] = useState<string>("default");
+
+  const [clusterPods, setClusterPods] = useState<PodEntry[]>([]);
+
+  const formatPodAge = (totalSeconds: number): string => {
+    if (totalSeconds < 1) return "0s";
+
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+
+    // show seconds if under a minute
+    if (parts.length === 0 && seconds > 0) {
+      parts.push(`${seconds}s`);
+    }
+
+    return parts.join(" ");
+  };
 
   // fetch active cluster counts and status
   const fetchClusterMetrics = async () => {
@@ -61,12 +92,27 @@ export default function App() {
     }
   };
 
+  const fetchClusterPods = async () => {
+    try {
+      const res = await fetch(
+        `${GO_API}/api/cluster/pods?namespace=${targetNamespace}`,
+      );
+      const data = await res.json();
+      setClusterPods(data.pods || []);
+    } catch (err) {
+      console.error("Failed fetching pods list:", err);
+    }
+  };
+
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
 
-    await Promise.all([fetchClusterMetrics(), fetchClusterLogs()]);
+    await Promise.all([
+      fetchClusterMetrics(),
+      fetchClusterLogs(),
+      fetchClusterPods(),
+    ]);
 
-    // timeout so the user sees the loading feedback
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
@@ -89,7 +135,7 @@ export default function App() {
         setIsModalOpen(false);
         setNewPodName("");
         setNewPodImage("");
-        await fetchClusterMetrics();
+        await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errorText = await res.text();
         alert(`Deployment blocked (${res.status}): ${errorText}`);
@@ -104,42 +150,53 @@ export default function App() {
   useEffect(() => {
     fetchClusterMetrics();
     fetchClusterLogs();
+    fetchClusterPods();
 
-    // wait 4 seconds before trying again
     const interval = setInterval(() => {
       fetchClusterMetrics();
       fetchClusterLogs();
+      fetchClusterPods();
     }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [refreshInterval, targetNamespace]);
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
+    <div className="flex h-screen w-screen bg-[#FBF5DD] font-sans text-slate-800 overflow-hidden">
       {/* left sidebar */}
-      <aside className="w-56 bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between shrink-0">
+      <aside className="w-56 bg-[#0D530E] border-r border-[#306D29]/20 p-4 flex flex-col justify-between shrink-0 shadow-xl">
         <div className="space-y-6">
-          <div className="text-xs font-bold uppercase tracking-wider text-sky-400 px-2">
+          <div className="text-sm font-black uppercase tracking-widest text-[#FBF5DD] px-2 flex items-center gap-2">
             KubeDash
           </div>
 
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             <button
               onClick={() => setActiveTab("overview")}
-              className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors cursor-pointer ${
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === "overview"
-                  ? "bg-sky-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800"
+                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
               }`}
             >
               Overview
             </button>
             <button
+              onClick={() => setActiveTab("pods")}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                activeTab === "pods"
+                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+              }`}
+            >
+              Pods Management
+            </button>
+            <button
               onClick={() => setActiveTab("settings")}
-              className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors cursor-pointer ${
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === "settings"
-                  ? "bg-sky-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800"
+                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
               }`}
             >
               Settings
@@ -152,44 +209,61 @@ export default function App() {
         {activeTab === "overview" ? (
           <div className="w-full max-w-4xl mx-auto space-y-6">
             {/* metrics row */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <div className="grid grid-cols-3 gap-5">
+              <div className="bg-[#E7E1B1]/40 border border-[#E7E1B1] p-5 rounded-xl shadow-sm">
+                <div className="text-xs font-bold text-[#0D530E]/70 uppercase tracking-wider">
                   Cluster State
                 </div>
                 <div
-                  className={`text-lg font-bold mt-1 ${status === "Healthy" ? "text-green-400" : "text-red-400"}`}
+                  className={`text-xl font-black mt-1 flex items-center gap-2 ${
+                    status === "Healthy" ? "text-[#5BB450]" : "text-[#B32626]"
+                  }`}
                 >
-                  ● {status}
+                  <span className="animate-pulse">●</span> {status}
                 </div>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+
+              <div className="bg-[#E7E1B1]/40 border border-[#E7E1B1] p-5 rounded-xl shadow-sm">
+                <div className="text-xs font-bold text-[#0D530E]/70 uppercase tracking-wider">
                   Active Nodes
                 </div>
-                <div className="text-xl font-bold mt-1 text-slate-100">
-                  {nodesTotal} / {nodesTotal || 1}
+                <div className="text-2xl font-black mt-1 text-[#0D530E]">
+                  {nodesTotal}
+                  <span className="text-2xl font-black mt-1">
+                    {" "}
+                    / {nodesTotal || 1}
+                  </span>
+                  <span className="text-xs font-normal ml-3">Available</span>
                 </div>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+
+              <div className="bg-[#E7E1B1]/40 border border-[#E7E1B1] p-5 rounded-xl shadow-sm">
+                <div className="text-xs font-bold text-[#0D530E]/70 uppercase tracking-wider">
                   Total Workloads
                 </div>
-                <div className="text-xl font-bold mt-1 text-sky-400">
-                  {podsCount} Pods
+                <div className="text-2xl font-black mt-1 text-[#306D29]">
+                  {podsCount}{" "}
+                  <span className="text-xs font-normal ml-2">Pods Running</span>
                 </div>
               </div>
             </div>
 
             {/* action panel */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-              <h3 className="text-sm font-semibold text-slate-300 mb-3">
-                Cluster Quick Actions
-              </h3>
-              <div className="flex flex-wrap gap-3">
+            <div className="bg-[#E7E1B1]/30 border border-[#E7E1B1] p-5 rounded-xl shadow-sm flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-[#0D530E]">
+                  Cluster Quick Actions
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Control orchestration happens instantly
+                </p>
+              </div>
+              <div className="flex gap-3">
                 <button
                   onClick={() => setIsModalOpen(true)}
-                  className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 rounded-md cursor-pointer transition-all active:scale-95 text-white"
+                  className="px-4 py-2 text-xs font-bold bg-[#306D29] text-[#FBF5DD] 
+                  hover:bg-[#0D530E] rounded-lg cursor-pointer transition-all 
+                  active:scale-95 shadow"
                 >
                   + Deploy New Pod
                 </button>
@@ -197,53 +271,67 @@ export default function App() {
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className={`px-4 py-2 text-xs font-bold rounded-md border transition-all active:scale-95 cursor-pointer ${
-                    isRefreshing
-                      ? "bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed"
-                      : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                  }`}
+                  className={`px-4 py-2 text-xs min-w-[150px] text-center font-bold rounded-lg border 
+                    transition-all active:scale-95 cursor-pointer ${
+                      isRefreshing
+                        ? "bg-[#FBF5DD]/20 border-[#E7E1B1]/60 text-[#0D530E]/70 cursor-not-allowed"
+                        : "bg-[#FBF5DD] border-[#E7E1B1] text-[#0D530E] hover:bg-[#E7E1B1]/40"
+                    }`}
                 >
                   {isRefreshing ? "Refreshing..." : "Refresh Metrics"}
                 </button>
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-                <h3 className="text-sm font-semibold text-slate-300">
-                  Monitored Resources
+            {/* logs */}
+            <div className="bg-[#E7E1B1]/30 border border-[#E7E1B1] rounded-xl p-5 shadow-sm">
+              <div
+                className="flex justify-between items-center border-b 
+                  border-[#E7E1B1] pb-3 mb-4"
+              >
+                <h3 className="text-sm font-bold text-[#0D530E]">
+                  Monitored Event Resources
                 </h3>
-                <span className="text-xs font-mono text-sky-400 font-bold uppercase tracking-wider">
+                <span
+                  className="text-xs font-mono bg-[#306D29]/10 text-[#0D530E] 
+                    px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider"
+                >
                   Namespace: {targetNamespace || "all"}
                 </span>
               </div>
 
-              {/* logs container placeholder */}
               {dbLogs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-800 rounded-lg text-slate-500">
-                  <span className="text-2xl mb-2">Logs</span>
-                  <p className="text-xs font-mono">
+                <div
+                  className="flex flex-col items-center justify-center 
+                    py-12 border border-dashed border-[#E7E1B1] rounded-xl 
+                    text-slate-400 bg-[#FBF5DD]/50"
+                >
+                  <p className="text-xs font-mono text-slate-500 font-semibold">
                     No live workloads fetched yet.
-                  </p>
-                  <p className="text-[11px] text-slate-600 mt-1">
-                    Go API endpoint linkages will display here.
                   </p>
                 </div>
               ) : (
-                /* terminal forDB events */
-                <div className="bg-black border border-slate-800 rounded-lg p-4 font-mono text-xs max-h-60 overflow-y-auto space-y-1 text-emerald-400 shadow-inner">
+                <div
+                  className="bg-[#0D530E] border border-[#306D29]/30 
+                    rounded-xl p-4 font-mono text-xs max-h-60 overflow-y-auto 
+                    space-y-1 text-[#FBF5DD] shadow-inner"
+                >
                   {dbLogs
                     .slice()
                     .reverse()
                     .map((log, index) => (
                       <div
                         key={log.ID || index}
-                        className={`truncate py-0.5 ${log.level === "Warning" ? "text-amber-400" : "text-emerald-400"}`}
+                        className={`truncate py-0.5 border-b border-[#306D29]/10 last:border-0 ${
+                          log.level === "Warning"
+                            ? "text-amber-300 font-semibold"
+                            : "text-[#FBF5DD]"
+                        }`}
                       >
-                        <span className="text-slate-500">
+                        <span className="text-[#E7E1B1]/70">
                           [{log.namespace}]
                         </span>{" "}
-                        <span className="text-sky-400 font-bold">
+                        <span className="text-[#E7E1B1] font-bold">
                           {log.pod_name || "cluster"}:
                         </span>{" "}
                         {log.message}
@@ -253,24 +341,118 @@ export default function App() {
               )}
             </div>
           </div>
+        ) : activeTab === "pods" ? (
+          /* pods table */
+          <div className="w-full max-w-4xl mx-auto space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-black text-[#0D530E]">
+                  Active Cluster Pods
+                </h2>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  Context Scope: {targetNamespace || "all"}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-bold bg-[#306D29] 
+                  text-[#FBF5DD] hover:bg-[#0D530E] rounded-lg text-white 
+                  transition-all cursor-pointer shadow"
+              >
+                + Deploy New Pod
+              </button>
+            </div>
+
+            <div
+              className="bg-[#E7E1B1]/30 border border-[#E7E1B1] 
+                rounded-xl overflow-hidden shadow-sm"
+            >
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr
+                    className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
+                      text-[#0D530E] font-bold tracking-wider uppercase text-[10px]"
+                  >
+                    <th className="p-4">Pod Name</th>
+                    <th className="p-4">Namespace</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Container Image</th>
+                    <th className="p-4 text-center">Age</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
+                  {clusterPods.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-8 text-center text-slate-400 italic bg-[#FBF5DD]/30"
+                      >
+                        No active pods found inside the current boundary
+                        context.
+                      </td>
+                    </tr>
+                  ) : (
+                    clusterPods.map((pod) => (
+                      <tr
+                        key={pod.name}
+                        className="hover:bg-[#E7E1B1]/20 transition-colors bg-[#FBF5DD]/10"
+                      >
+                        <td className="p-4 font-bold text-[#0D530E]">
+                          {pod.name}
+                        </td>
+                        <td className="p-4 text-slate-600">{pod.namespace}</td>
+                        <td className="p-4">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] 
+                              font-bold tracking-wide uppercase ${
+                                pod.status === "Running"
+                                  ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
+                                  : pod.status === "Pending"
+                                    ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
+                                    : "bg-red-600/10 text-red-700 border border-red-600/20"
+                              }`}
+                          >
+                            {pod.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
+                          {pod.image}
+                        </td>
+                        <td className="p-4 text-center text-slate-500 font-medium">
+                          {formatPodAge(pod.age_seconds)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
-          <div className="w-full max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 animate-fade-in">
+          /* settings */
+          <div
+            className="w-full max-w-2xl mx-auto bg-[#E7E1B1]/30 border 
+              border-[#E7E1B1] rounded-xl p-6 space-y-6"
+          >
             <div>
-              <h2 className="text-lg font-bold text-white">
+              <h2 className="text-lg font-black text-[#0D530E]">
                 Engine Configuration
               </h2>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">
+              <p className="text-xs text-slate-500 font-mono mt-0.5">
                 Customize KubeDash telemetry capture parameters.
               </p>
             </div>
 
-            <hr className="border-slate-800" />
+            <hr className="border-[#E7E1B1]" />
 
             <div className="space-y-4">
               {/* refresh interval */}
-              <div className="flex items-center justify-between bg-slate-950 p-4 rounded-lg border border-slate-800/60">
+              <div
+                className="flex items-center justify-between bg-[#FBF5DD]/50 
+                  p-4 rounded-xl border border-[#E7E1B1]"
+              >
                 <div className="space-y-0.5">
-                  <div className="text-sm font-semibold text-slate-200">
+                  <div className="text-sm font-bold text-[#0D530E]">
                     Metrics Polling Frequency
                   </div>
                   <div className="text-xs text-slate-500">
@@ -280,7 +462,9 @@ export default function App() {
                 <select
                   value={refreshInterval}
                   onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                  className="bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 outline-none focus:border-sky-500 cursor-pointer"
+                  className="bg-[#FBF5DD] border border-[#E7E1B1] text-[#0D530E] 
+                    rounded-lg px-3 py-1.5 text-xs font-semibold outline-none 
+                    focus:border-[#306D29] cursor-pointer"
                 >
                   <option value={2000}>High Speed (2s)</option>
                   <option value={4000}>Default (4s)</option>
@@ -290,9 +474,12 @@ export default function App() {
               </div>
 
               {/* target namespace */}
-              <div className="flex items-center justify-between bg-slate-950 p-4 rounded-lg border border-slate-800/60">
+              <div
+                className="flex items-center justify-between bg-[#FBF5DD]/50 
+                  p-4 rounded-xl border border-[#E7E1B1]"
+              >
                 <div className="space-y-0.5">
-                  <div className="text-sm font-semibold text-slate-200">
+                  <div className="text-sm font-bold text-[#0D530E]">
                     Target Namespace Context
                   </div>
                   <div className="text-xs text-slate-500">
@@ -305,7 +492,9 @@ export default function App() {
                   onChange={(e) =>
                     setTargetNamespace(e.target.value.toLowerCase().trim())
                   }
-                  className="w-32 bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-md px-3 py-1.5 text-xs text-slate-200 outline-none font-mono text-center"
+                  className="w-32 bg-[#FBF5DD] border border-[#E7E1B1] 
+                    text-[#0D530E] focus:border-[#306D29] rounded-lg px-3 
+                    py-1.5 text-xs outline-none font-mono text-center font-bold"
                 />
               </div>
             </div>
@@ -315,20 +504,29 @@ export default function App() {
 
       {/* modal for deploying */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center 
+            bg-black/40 backdrop-blur-sm"
+        >
+          <div
+            className="bg-[#FBF5DD] border border-[#E7E1B1] w-full max-w-md 
+              rounded-xl p-6 shadow-2xl space-y-4 animate-fade-in"
+          >
             <div>
-              <h3 className="text-base font-bold text-slate-100">
+              <h3 className="text-base font-black text-[#0D530E]">
                 Deploy New Workspace Workload
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Spawns a container pod instance into namespace: default.
               </p>
             </div>
 
             <form onSubmit={handleDeployPod} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <label
+                  className="text-[10px] font-bold uppercase 
+                    tracking-wider text-[#0D530E]/70"
+                >
                   Pod Identity Name
                 </label>
                 <input
@@ -341,12 +539,14 @@ export default function App() {
                       e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
                     )
                   }
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-md px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all"
+                  className="w-full bg-[#E7E1B1]/20 border border-[#E7E1B1] 
+                    focus:border-[#306D29] text-[#0D530E] font-medium rounded-lg 
+                    px-3 py-2 text-sm placeholder-slate-400 outline-none transition-all"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#0D530E]/70">
                   Container Image
                 </label>
                 <input
@@ -355,7 +555,9 @@ export default function App() {
                   placeholder="e.g., nginx:alpine or redis"
                   value={newPodImage}
                   onChange={(e) => setNewPodImage(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-md px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all"
+                  className="w-full bg-[#E7E1B1]/20 border border-[#E7E1B1] 
+                    focus:border-[#306D29] text-[#0D530E] font-medium rounded-lg 
+                    px-3 py-2 text-sm placeholder-slate-400 outline-none transition-all"
                 />
               </div>
 
@@ -363,14 +565,18 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md cursor-pointer transition-all"
+                  className="px-4 py-2 text-xs font-bold bg-[#E7E1B1] 
+                    hover:bg-[#E7E1B1]/60 text-[#0D530E] rounded-lg 
+                    cursor-pointer transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isDeploying}
-                  className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 disabled:bg-sky-800 text-white rounded-md cursor-pointer transition-all flex items-center gap-1.5"
+                  className="px-4 py-2 text-xs font-bold bg-[#306D29] 
+                    hover:bg-[#0D530E] disabled:bg-slate-300 text-[#FBF5DD] 
+                    rounded-lg cursor-pointer transition-all flex items-center gap-1.5"
                 >
                   {isDeploying ? "Deploying..." : "Launch"}
                 </button>
