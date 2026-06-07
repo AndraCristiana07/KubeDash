@@ -42,6 +42,7 @@ export default function App() {
   const [targetNamespace, setTargetNamespace] = useState<string>("default");
 
   const [clusterPods, setClusterPods] = useState<PodEntry[]>([]);
+  const [deletingPod, setDeletingPod] = useState<string | null>(null);
 
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
@@ -101,6 +102,32 @@ export default function App() {
       setClusterPods(data.pods || []);
     } catch (err) {
       console.error("Failed fetching pods list:", err);
+    }
+  };
+
+  const handleDeletePod = async (namespace: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to terminate pod "${name}"?`))
+      return;
+
+    setDeletingPod(name);
+    try {
+      const res = await fetch(
+        `${GO_API}/api/cluster/pods?namespace=${namespace}&name=${name}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (res.ok) {
+        await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
+      } else {
+        const errText = await res.text();
+        alert(`Failed to delete pod: ${errText}`);
+      }
+    } catch (err) {
+      console.error("Error executing pod termination:", err);
+    } finally {
+      setDeletingPod(null);
     }
   };
 
@@ -378,6 +405,7 @@ export default function App() {
                     <th className="p-4">Status</th>
                     <th className="p-4">Container Image</th>
                     <th className="p-4 text-center">Age</th>
+                    <th className="p-4 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
@@ -420,6 +448,22 @@ export default function App() {
                         </td>
                         <td className="p-4 text-center text-slate-500 font-medium">
                           {formatPodAge(pod.age_seconds)}
+                        </td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() =>
+                              handleDeletePod(pod.namespace, pod.name)
+                            }
+                            disabled={deletingPod === pod.name}
+                            className="px-2.5 py-1 text-[10px] font-bold text-red-700 
+                              hover:text-white bg-red-600/10 hover:bg-red-600 border 
+                              border-red-600/20 rounded-md transition-all 
+                              cursor-pointer disabled:opacity-40"
+                          >
+                            {deletingPod === pod.name
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
                         </td>
                       </tr>
                     ))

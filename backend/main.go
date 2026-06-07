@@ -79,6 +79,7 @@ func main() {
 		api.GET("/cluster/summary", getClusterSummary)
 		api.POST("/cluster/deploy", deployNewPod)
 		api.GET("/cluster/pods", getClusterPods)
+		api.DELETE("/cluster/pods", deleteClusterPod)
 	}
 
 	// start Server on port 8080
@@ -278,6 +279,34 @@ func getClusterPods(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"pods": podList,
 	})
+}
+
+func deleteClusterPod(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	namespace := c.Query("namespace")
+	podName := c.Query("name")
+
+	if namespace == "" || podName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or name parameters"})
+		return
+	}
+
+	// trigger cluster termination command
+	gracePeriod := int64(10)
+	err := clientset.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriod,
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
 }
 
 func homeDir() string {
