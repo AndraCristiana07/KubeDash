@@ -22,6 +22,11 @@ import (
 // ref for Kubernetes client for routes
 var clientset *kubernetes.Clientset
 
+type DeployPodRequest struct {
+	PodName string `json:"pod_name" binding:"required"`
+	Image   string `json:"image" binding:"required"`
+}
+
 func main() {
 	// initialize Database
 	config.ConnectDatabase()
@@ -64,6 +69,7 @@ func main() {
 		api.POST("/logs", controllers.CreateLog)
 		api.GET("/logs", controllers.GetLogs)
 		api.GET("/cluster/summary", getClusterSummary)
+		api.POST("/cluster/deploy", deployNewPod)
 	}
 
 	// start Server on port 8080
@@ -118,6 +124,7 @@ func watchEventsInBackground() {
 		}
 	}
 }
+
 func getClusterSummary(c *gin.Context) {
 	if clientset == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
@@ -172,6 +179,51 @@ func getClusterSummary(c *gin.Context) {
 		"podsCount":     len(pods.Items),
 		"nodesTotal":    len(nodes.Items),
 		"clusterStatus": clusterStatus,
+	})
+}
+
+func deployNewPod(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req DeployPodRequest
+	// parse incoming payload from frontend
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input variables"})
+		return
+	}
+
+	// manifest engine definitions for client-go
+	podManifest := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.PodName,
+			Namespace: "default",
+			Labels: map[string]string{
+				"deployed-by": "kubedash-engine",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:            req.PodName + "-container",
+					Image:           req.Image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+				},
+			},
+		},
+	}
+
+	// exec payload delivery to active cluster context
+	_, err := clientset.CoreV1().Pods("default").Create(context.TODO(), podManifest, metav1.CreateOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Pod specification deployed successfully!",
 	})
 }
 

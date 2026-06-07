@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, ReactEventHandler } from "react";
 
 interface ClusterLog {
   ID: number;
@@ -24,6 +24,11 @@ export default function App() {
   const [status, setStatus] = useState<string>("Healthy");
 
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [newPodName, setNewPodName] = useState<string>("");
+  const [newPodImage, setNewPodImage] = useState<string>("");
+  const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
   // fetch active cluster counts and status
   const fetchClusterMetrics = async () => {
@@ -56,6 +61,37 @@ export default function App() {
 
     // timeout so the user sees the loading feedback
     setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  const handleDeployPod = async (e: React.SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!newPodName || !newPodImage) return;
+
+    setIsDeploying(true);
+    try {
+      const res = await fetch(`${GO_API}/api/cluster/deploy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pod_name: newPodName.trim(),
+          image: newPodImage.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        setNewPodName("");
+        setNewPodImage("");
+        await fetchClusterMetrics();
+      } else {
+        const errorText = await res.text();
+        alert(`Deployment blocked (${res.status}): ${errorText}`);
+      }
+    } catch (err) {
+      console.error("Failed to connect to API:", err);
+    } finally {
+      setIsDeploying(false);
+    }
   };
 
   useEffect(() => {
@@ -144,7 +180,10 @@ export default function App() {
                 Cluster Quick Actions
               </h3>
               <div className="flex flex-wrap gap-3">
-                <button className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 rounded-md cursor-pointer transition-all active:scale-95 text-white">
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 rounded-md cursor-pointer transition-all active:scale-95 text-white"
+                >
                   + Deploy New Pod
                 </button>
 
@@ -172,7 +211,7 @@ export default function App() {
                 </span>
               </div>
 
-              {/* logs container Placeholder */}
+              {/* logs container placeholder */}
               {dbLogs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-800 rounded-lg text-slate-500">
                   <span className="text-2xl mb-2">Logs</span>
@@ -219,6 +258,73 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* modal for deploying */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-100">
+                Deploy New Workspace Workload
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Spawns a container pod instance into namespace: default.
+              </p>
+            </div>
+
+            <form onSubmit={handleDeployPod} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Pod Identity Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g., custom-web-server"
+                  value={newPodName}
+                  onChange={(e) =>
+                    setNewPodName(
+                      e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-md px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Container Image
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g., nginx:alpine or redis"
+                  value={newPodImage}
+                  onChange={(e) => setNewPodImage(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-md px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md cursor-pointer transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDeploying}
+                  className="px-4 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 disabled:bg-sky-800 text-white rounded-md cursor-pointer transition-all flex items-center gap-1.5"
+                >
+                  {isDeploying ? "Deploying..." : "Launch"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
