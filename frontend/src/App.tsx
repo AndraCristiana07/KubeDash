@@ -36,20 +36,24 @@ export default function App() {
   // fetch active cluster counts and status
   const fetchClusterMetrics = async () => {
     try {
-      const res = await fetch(`${GO_API}/api/cluster/summary`);
+      const res = await fetch(
+        `${GO_API}/api/cluster/summary?namespace=${targetNamespace}`,
+      );
       const data = await res.json();
       setPodsCount(data.podsCount || 0);
       setNodesTotal(data.nodesTotal || 0);
       setStatus(data.clusterStatus || "Healthy");
     } catch (err) {
-      console.error("Failed fetching metrics from Go backend:", err);
+      console.error("Failed fetching metrics:", err);
     }
   };
 
   // fetch saved database logs
   const fetchClusterLogs = async () => {
     try {
-      const res = await fetch(`${GO_API}/api/logs`);
+      const res = await fetch(
+        `${GO_API}/api/logs?namespace=${targetNamespace}`,
+      );
       const json = await res.json();
       setDbLogs(json.data || []);
     } catch (err) {
@@ -108,7 +112,7 @@ export default function App() {
     }, refreshInterval);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshInterval, targetNamespace]);
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
@@ -209,8 +213,8 @@ export default function App() {
                 <h3 className="text-sm font-semibold text-slate-300">
                   Monitored Resources
                 </h3>
-                <span className="text-xs text-slate-500">
-                  Namespace: default
+                <span className="text-xs font-mono text-sky-400 font-bold uppercase tracking-wider">
+                  Namespace: {targetNamespace || "all"}
                 </span>
               </div>
 

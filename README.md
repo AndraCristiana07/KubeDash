@@ -33,3 +33,8 @@ Can now add pods from frontend:
 - It will take a bit to deploy
 - After that, the modal closes and the logs will show
 - Logs take 4 seconds to refresh, but you can manually refresh it from this section
+
+## Settings
+
+- Set interval for logs fetching
+- Set namespace

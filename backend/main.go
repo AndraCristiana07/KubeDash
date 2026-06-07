@@ -131,8 +131,14 @@ func getClusterSummary(c *gin.Context) {
 		return
 	}
 
-	// total pod length count for all namespaces
-	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	//read namespace target
+	nsFilter := c.Query("namespace")
+	if nsFilter == "all" || nsFilter == "*" || nsFilter == "" {
+		nsFilter = ""
+	}
+
+	// pod length count for filtered namespace
+	pods, err := clientset.CoreV1().Pods(nsFilter).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
