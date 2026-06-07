@@ -30,6 +30,9 @@ export default function App() {
   const [newPodImage, setNewPodImage] = useState<string>("");
   const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
+  const [refreshInterval, setRefreshInterval] = useState<number>(4000);
+  const [targetNamespace, setTargetNamespace] = useState<string>("default");
+
   // fetch active cluster counts and status
   const fetchClusterMetrics = async () => {
     try {
@@ -102,7 +105,7 @@ export default function App() {
     const interval = setInterval(() => {
       fetchClusterMetrics();
       fetchClusterLogs();
-    }, 4000);
+    }, refreshInterval);
 
     return () => clearInterval(interval);
   }, []);
@@ -247,14 +250,61 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* temp settings */
-          <div className="w-full max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-bold text-white mb-2">
-              Engine Settings
-            </h2>
-            <p className="text-xs text-slate-400 font-mono">
-              Cluster configurations will go here.
-            </p>
+          <div className="w-full max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 animate-fade-in">
+            <div>
+              <h2 className="text-lg font-bold text-white">
+                Engine Configuration
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Customize KubeDash telemetry capture parameters.
+              </p>
+            </div>
+
+            <hr className="border-slate-800" />
+
+            <div className="space-y-4">
+              {/* refresh interval */}
+              <div className="flex items-center justify-between bg-slate-950 p-4 rounded-lg border border-slate-800/60">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-semibold text-slate-200">
+                    Metrics Polling Frequency
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Sets how often the UI scrapes telemetry endpoints.
+                  </div>
+                </div>
+                <select
+                  value={refreshInterval}
+                  onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                  className="bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 outline-none focus:border-sky-500 cursor-pointer"
+                >
+                  <option value={2000}>High Speed (2s)</option>
+                  <option value={4000}>Default (4s)</option>
+                  <option value={10000}>Balanced (10s)</option>
+                  <option value={30000}>Eco Mode (30s)</option>
+                </select>
+              </div>
+
+              {/* target namespace */}
+              <div className="flex items-center justify-between bg-slate-950 p-4 rounded-lg border border-slate-800/60">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-semibold text-slate-200">
+                    Target Namespace Context
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Filters core workloads to a designated isolation boundary.
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={targetNamespace}
+                  onChange={(e) =>
+                    setTargetNamespace(e.target.value.toLowerCase().trim())
+                  }
+                  className="w-32 bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-md px-3 py-1.5 text-xs text-slate-200 outline-none font-mono text-center"
+                />
+              </div>
+            </div>
           </div>
         )}
       </main>
