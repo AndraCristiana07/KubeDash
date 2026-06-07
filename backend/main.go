@@ -13,14 +13,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 // ref for Kubernetes client for routes
 var clientset *kubernetes.Clientset
+var k8sConfig *rest.Config
 
 type DeployPodRequest struct {
 	PodName string `json:"pod_name" binding:"required"`
@@ -35,12 +39,40 @@ type PodTableEntry struct {
 	Ageseconds int    `json:"age_seconds"`
 }
 
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+type wsStreamHandler struct {
+	wsConn *websocket.Conn
+}
+
+func (w *wsStreamHandler) Read(p []byte) (n int, err error) {
+	_, msg, err := w.wsConn.ReadMessage()
+	if err != nil {
+		return 0, err
+	}
+	copy(p, msg)
+	return len(msg), nil
+}
+
+func (w *wsStreamHandler) Write(p []byte) (n int, err error) {
+	err = w.wsConn.WriteMessage(websocket.BinaryMessage, p)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 func main() {
 	// initialize Database
 	config.ConnectDatabase()
 
+	var err error
 	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
-	k8sConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to load kubeconfig: %v", err))
 	}
@@ -80,6 +112,7 @@ func main() {
 		api.POST("/cluster/deploy", deployNewPod)
 		api.GET("/cluster/pods", getClusterPods)
 		api.DELETE("/cluster/pods", deleteClusterPod)
+		api.GET("/cluster/ssh", handlePodSSH)
 	}
 
 	// start Server on port 8080
@@ -307,6 +340,56 @@ func deleteClusterPod(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
+}
+
+func handlePodSSH(c *gin.Context) {
+	namespace := c.Query("namespace")
+	podName := c.Query("name")
+
+	if namespace == "" || podName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or name details"})
+		return
+	}
+
+	// upgrade HTTP request context to WebSocket connection
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade socket connection: %v", err)
+		return
+	}
+	defer ws.Close()
+
+	// native remote execution pipeline command (default to /bin/sh shell)
+	req := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec").
+		Param("stdin", "true").
+		Param("stdout", "true").
+		Param("stderr", "true").
+		Param("tty", "true").
+		Param("command", "/bin/sh")
+
+	executor, err := remotecommand.NewSPDYExecutor(k8sConfig, "POST", req.URL())
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\r\nExecution system failure: "+err.Error()))
+		return
+	}
+
+	// map WebSocket streams directly to the interactive container session
+	handler := &wsStreamHandler{wsConn: ws}
+
+	err = executor.StreamWithContext(c.Request.Context(), remotecommand.StreamOptions{
+		Stdin:  handler,
+		Stdout: handler,
+		Stderr: handler,
+		Tty:    true,
+	})
+
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: "+err.Error()))
+	}
 }
 
 func homeDir() string {

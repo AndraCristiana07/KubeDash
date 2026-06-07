@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import TerminalModal from "./Terminal";
 
 interface ClusterLog {
   ID: number;
@@ -43,6 +44,8 @@ export default function App() {
 
   const [clusterPods, setClusterPods] = useState<PodEntry[]>([]);
   const [deletingPod, setDeletingPod] = useState<string | null>(null);
+
+  const [sshPod, setSshPod] = useState<PodEntry | null>(null);
 
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
@@ -450,20 +453,31 @@ export default function App() {
                           {formatPodAge(pod.age_seconds)}
                         </td>
                         <td className="p-4 text-center">
-                          <button
-                            onClick={() =>
-                              handleDeletePod(pod.namespace, pod.name)
-                            }
-                            disabled={deletingPod === pod.name}
-                            className="px-2.5 py-1 text-[10px] font-bold text-red-700 
-                              hover:text-white bg-red-600/10 hover:bg-red-600 border 
-                              border-red-600/20 rounded-md transition-all 
-                              cursor-pointer disabled:opacity-40"
-                          >
-                            {deletingPod === pod.name
-                              ? "Deleting..."
-                              : "Delete"}
-                          </button>
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => setSshPod(pod)}
+                              className="px-2 py-1 text-[10px] font-bold 
+                                text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
+                                hover:bg-[#306D29] border border-[#306D29]/20 
+                                rounded-md transition-all cursor-pointer"
+                            >
+                              Terminal
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeletePod(pod.namespace, pod.name)
+                              }
+                              disabled={deletingPod === pod.name}
+                              className="px-2.5 py-1 text-[10px] font-bold 
+                                text-red-700 hover:text-white bg-red-600/10 
+                                hover:bg-red-600 border border-red-600/20 rounded-md 
+                                transition-all cursor-pointer disabled:opacity-40"
+                            >
+                              {deletingPod === pod.name
+                                ? "Killing..."
+                                : "Delete"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -628,6 +642,13 @@ export default function App() {
             </form>
           </div>
         </div>
+      )}
+      {sshPod && (
+        <TerminalModal
+          podName={sshPod.name}
+          namespace={sshPod.namespace}
+          onClose={() => setSshPod(null)}
+        />
       )}
     </div>
   );
