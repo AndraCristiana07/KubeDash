@@ -24,12 +24,24 @@ func CreateLog(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": input})
 }
 
-// GET /api/logs - fetch all logs
+// GET /api/logs - fetch logs
 func GetLogs(c *gin.Context) {
 	var logs []models.ClusterLog
+	nsFilter := c.Query("namespace")
 
-	// query database for all entries
-	config.DB.Find(&logs)
+	var err error
+	// namespace is empty, "all", or "*" -> fetch everything
+	if nsFilter == "" || nsFilter == "all" || nsFilter == "*" {
+		err = config.DB.Order("created_at desc").Limit(100).Find(&logs).Error
+	} else {
+		// filter specifically for what the user typed
+		err = config.DB.Where("namespace = ?", nsFilter).Order("created_at desc").Limit(100).Find(&logs).Error
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": logs})
 }
