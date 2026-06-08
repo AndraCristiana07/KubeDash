@@ -38,3 +38,18 @@ Can now add pods from frontend:
 
 - Set interval for logs fetching
 - Set namespace
+
+## Pods Table
+
+Here you can see all pods (depending on chosen namespace) with pod name, namespace, status, image, age (since when it's active) and actions.
+
+Actions:
+
+- A delete action that will gracefully terminate the pod (kubectl delete pod pod_name)
+- A terminal action that opens a SSH connection to inside the container. Clicking on this button opens a modal for the terminal on the page
+- A logs action where you can see the logs inside that container
+- A restart action that gracefully restarts the container
+
+## Audit Table
+
+Here you can see all logs paginated with search and filtes for severity. You can also set how many logs per page you can see.

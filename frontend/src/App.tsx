@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from "react";
+import TerminalModal from "./Terminal";
+import LogStreamModal from "./LogStream";
+import AuditLogView from "./AuditLogs";
+import toast, { Toaster } from "react-hot-toast";
 
 interface ClusterLog {
   ID: number;
@@ -20,11 +24,14 @@ interface PodEntry {
 const GO_API =
   (typeof process !== "undefined" && process.env?.GO_API) ||
   "http://localhost:8080";
+const WB =
+  (typeof process !== "undefined" && process.env?.REACT_WEBSOCKET) ||
+  "ws://localhost:8080";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"overview" | "settings" | "pods">(
-    "overview",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "settings" | "pods" | "audit"
+  >("overview");
 
   const [podsCount, setPodsCount] = useState<number>(0);
   const [nodesTotal, setNodesTotal] = useState<number>(0);
@@ -43,6 +50,10 @@ export default function App() {
 
   const [clusterPods, setClusterPods] = useState<PodEntry[]>([]);
   const [deletingPod, setDeletingPod] = useState<string | null>(null);
+
+  const [sshPod, setSshPod] = useState<PodEntry | null>(null);
+  const [logPod, setLogPod] = useState<PodEntry | null>(null);
+  const [isRestarting, setIsRestarting] = useState<string | null>(null);
 
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
@@ -83,10 +94,15 @@ export default function App() {
   // fetch saved database logs
   const fetchClusterLogs = async () => {
     try {
-      const res = await fetch(
-        `${GO_API}/api/logs?namespace=${targetNamespace}`,
-      );
+      const timestamp = new Date().getTime();
+      const url = `${GO_API}/api/logs/overview?namespace=${targetNamespace}&_t=${timestamp}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+      });
+
       const json = await res.json();
+
       setDbLogs(json.data || []);
     } catch (err) {
       console.error("Failed fetching logs from Go backend:", err);
@@ -119,13 +135,112 @@ export default function App() {
       );
 
       if (res.ok) {
+        // success toast
+        toast.success(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Pod{" "}
+                <span className="font-mono font-bold text-[#306D29]">
+                  "{name}"
+                </span>{" "}
+                termination executed safely. Kubernetes is stopping pod...
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
+
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errText = await res.text();
-        alert(`Failed to delete pod: ${errText}`);
+
+        toast.error(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-red-800 font-semibold">
+                Failed to delete pod: {errText}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-red-700/50 hover:text-red-700 p-0.5 rounded transition-colors focus:outline-none cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 6000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #dc2626",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
       }
     } catch (err) {
       console.error("Error executing pod termination:", err);
+      // error toast if there's network errors
+      toast.error("Network or infrastructure system error occurred.", {
+        duration: 5000,
+        position: "top-right",
+      });
     } finally {
       setDeletingPod(null);
     }
@@ -174,6 +289,157 @@ export default function App() {
     }
   };
 
+  const onTriggerRestartClick = (namespace: string, podName: string) => {
+    // check if pod belongs to dashboard's core management layer
+    const isCoreInfrastructure =
+      podName.includes("kubedash-backend") ||
+      podName.includes("kubedash-postgres");
+
+    if (isCoreInfrastructure) {
+      const confirmationPrompt = window.confirm(
+        `⚠️ WARNING: You are attempting to restart a core dashboard component ("${podName}").\n\n` +
+          `This action will momentarily disconnect your dashboard, drop active log streams, and interrupt live monitoring sessions.\n\n` +
+          `Are you absolutely sure you want to proceed?`,
+      );
+
+      // terminate the execution chain silently
+      if (!confirmationPrompt) return;
+    }
+
+    // proceed immediately with the restart flow
+    handleRestartPod(namespace, podName);
+  };
+
+  const handleRestartPod = async (namespace: string, podName: string) => {
+    setIsRestarting(podName);
+
+    try {
+      const res = await fetch(`${GO_API}/api/cluster/restart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          namespace: namespace,
+          pod_name: podName, // raw pod name
+        }),
+      });
+
+      if (res.ok) {
+        toast.success(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium">
+                Rolling restart safely dispatched for pod instance!
+              </span>
+            </div>
+          ),
+          {
+            duration: 4000,
+            style: { background: "#FBF5DD", borderLeft: "4px solid #306D29" },
+          },
+        );
+        await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
+      } else {
+        const errText = await res.text();
+        alert(`Restart action failed: ${errText}`);
+      }
+    } catch (err) {
+      console.error("Network request failed:", err);
+    } finally {
+      setIsRestarting(null);
+    }
+  };
+
+  // notification socket
+  useEffect(() => {
+    const ws = new WebSocket(`${WB}/api/cluster/notifications`);
+
+    ws.onopen = () => {
+      console.log("Live Notification WebSocket Connected Successfully!");
+    };
+
+    ws.onmessage = (event) => {
+      console.log("Received event hunk data payload:", event.data);
+      try {
+        const clusterEvent = JSON.parse(event.data);
+        if (!clusterEvent.message) return;
+
+        const msgText = clusterEvent.message;
+        const namespaceText = clusterEvent.namespace || "default";
+        const podText = clusterEvent.pod_name || "Resource";
+        const levelText = clusterEvent.level || "";
+
+        const isWarning = levelText === "Warning";
+        const isErrorMsg =
+          msgText.toLowerCase().includes("fail") ||
+          msgText.toLowerCase().includes("backoff") ||
+          msgText.toLowerCase().includes("err");
+
+        if (isWarning || isErrorMsg) {
+          toast.custom(
+            (t) => (
+              <div
+                className={`${
+                  t.visible ? "animate-enter" : "animate-leave"
+                } max-w-md w-full bg-[#FBF5DD] border-2 border-red-600/30 
+                shadow-xl rounded-xl pointer-events-auto flex p-4 
+                text-left justify-between items-start gap-3 
+                border-l-4 border-l-red-600`}
+              >
+                <div className="flex-1">
+                  <p className="text-xs font-mono font-bold text-red-800">
+                    ⚠️ CLUSTER WARNING ({namespaceText})
+                  </p>
+                  <p className="text-xs text-[#0D530E] mt-1 font-semibold">
+                    Pod: {podText}
+                  </p>
+                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3">
+                    {msgText}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toast.dismiss(t.id);
+                    toast.remove(t.id);
+                  }}
+                  className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                  aria-label="Close alert"
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            ),
+            { duration: 6000, id: `toast-${podText}` },
+          );
+        }
+      } catch (err) {
+        console.error("Failed parsing incoming alert package:", err);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("Notification Socket Error Encountered:", error);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [WB]);
+
   useEffect(() => {
     fetchClusterMetrics();
     fetchClusterLogs();
@@ -185,7 +451,9 @@ export default function App() {
       fetchClusterPods();
     }, refreshInterval);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, [refreshInterval, targetNamespace]);
 
   return (
@@ -217,6 +485,16 @@ export default function App() {
               }`}
             >
               Pods Management
+            </button>
+            <button
+              onClick={() => setActiveTab("audit")}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                activeTab === "audit"
+                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+              }`}
+            >
+              Audit logs
             </button>
             <button
               onClick={() => setActiveTab("settings")}
@@ -420,18 +698,35 @@ export default function App() {
                       </td>
                     </tr>
                   ) : (
-                    clusterPods.map((pod) => (
-                      <tr
-                        key={pod.name}
-                        className="hover:bg-[#E7E1B1]/20 transition-colors bg-[#FBF5DD]/10"
-                      >
-                        <td className="p-4 font-bold text-[#0D530E]">
-                          {pod.name}
-                        </td>
-                        <td className="p-4 text-slate-600">{pod.namespace}</td>
-                        <td className="p-4">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] 
+                    clusterPods.map((pod) => {
+                      const isSystemCore = pod.name.includes("kubedash-");
+                      return (
+                        <tr
+                          key={pod.name}
+                          className={`transition-colors border-b border-[#E7E1B1]/10 ${
+                            isSystemCore
+                              ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500" // system core
+                              : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent" // normal rows
+                          }`}
+                        >
+                          <td className="p-4 font-bold text-[#0D530E]">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>{pod.name}</span>
+
+                              {/* "System Core" badge */}
+                              {isSystemCore && (
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 text-amber-800 border border-amber-600/20 shadow-sm">
+                                  System Core
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-slate-600">
+                            {pod.namespace}
+                          </td>
+                          <td className="p-4">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] 
                               font-bold tracking-wide uppercase ${
                                 pod.status === "Running"
                                   ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
@@ -439,39 +734,108 @@ export default function App() {
                                     ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
                                     : "bg-red-600/10 text-red-700 border border-red-600/20"
                               }`}
-                          >
-                            {pod.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
-                          {pod.image}
-                        </td>
-                        <td className="p-4 text-center text-slate-500 font-medium">
-                          {formatPodAge(pod.age_seconds)}
-                        </td>
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() =>
-                              handleDeletePod(pod.namespace, pod.name)
-                            }
-                            disabled={deletingPod === pod.name}
-                            className="px-2.5 py-1 text-[10px] font-bold text-red-700 
-                              hover:text-white bg-red-600/10 hover:bg-red-600 border 
-                              border-red-600/20 rounded-md transition-all 
-                              cursor-pointer disabled:opacity-40"
-                          >
-                            {deletingPod === pod.name
-                              ? "Deleting..."
-                              : "Delete"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                            >
+                              {pod.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
+                            {pod.image}
+                          </td>
+                          <td className="p-4 text-center text-slate-500 font-medium">
+                            {formatPodAge(pod.age_seconds)}
+                          </td>
+                          <td className="p-4 text-center">
+                            <div className="flex justify-center gap-2">
+                              <button
+                                onClick={() => setLogPod(pod)}
+                                className="px-2 py-1 text-[10px] font-bold 
+                                text-amber-800 hover:text-white bg-amber-500/10 
+                                hover:bg-amber-600 border border-amber-500/20 
+                                rounded-md transition-all cursor-pointer"
+                              >
+                                Logs
+                              </button>
+                              <button
+                                onClick={() => setSshPod(pod)}
+                                className="px-2 py-1 text-[10px] font-bold 
+                                text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
+                                hover:bg-[#306D29] border border-[#306D29]/20 
+                                rounded-md transition-all cursor-pointer"
+                              >
+                                Terminal
+                              </button>
+                              <button
+                                onClick={() =>
+                                  onTriggerRestartClick(pod.namespace, pod.name)
+                                }
+                                disabled={isRestarting === pod.name}
+                                title="Trigger Restart"
+                                className="p-1.5 rounded-lg border border-[#E7E1B1] bg-white text-[#306D29] 
+                                  hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
+                                  disabled:opacity-40 shadow-sm flex items-center justify-center"
+                              >
+                                {isRestarting === pod.name ? (
+                                  <svg
+                                    className="animate-spin h-3.5 w-3.5 text-[#0D530E]"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <circle
+                                      className="opacity-25"
+                                      cx="12"
+                                      cy="12"
+                                      r="10"
+                                      stroke="currentColor"
+                                      strokeWidth="4"
+                                    />
+                                    <path
+                                      className="opacity-75"
+                                      fill="currentColor"
+                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                    />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    className="h-3.5 w-3.5"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2.5}
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                    />
+                                  </svg>
+                                )}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleDeletePod(pod.namespace, pod.name)
+                                }
+                                disabled={deletingPod === pod.name}
+                                className="px-2.5 py-1 text-[10px] font-bold 
+                                text-red-700 hover:text-white bg-red-600/10 
+                                hover:bg-red-600 border border-red-600/20 rounded-md 
+                                transition-all cursor-pointer disabled:opacity-40"
+                              >
+                                {deletingPod === pod.name
+                                  ? "Killing..."
+                                  : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+        ) : activeTab == "audit" ? (
+          <AuditLogView goApiUrl={GO_API} activeNamespace={targetNamespace} />
         ) : (
           /* settings */
           <div
@@ -629,6 +993,21 @@ export default function App() {
           </div>
         </div>
       )}
+      {sshPod && (
+        <TerminalModal
+          podName={sshPod.name}
+          namespace={sshPod.namespace}
+          onClose={() => setSshPod(null)}
+        />
+      )}
+      {logPod && (
+        <LogStreamModal
+          podName={logPod.name}
+          namespace={logPod.namespace}
+          onClose={() => setLogPod(null)}
+        />
+      )}
+      <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
 }
