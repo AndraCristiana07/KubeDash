@@ -649,7 +649,6 @@ export default function App() {
           </div>
         ) : activeTab === "pods" ? (
           /* pods table */
-          // TODO: make table scrollable
           <div className="w-full max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -674,61 +673,63 @@ export default function App() {
               className="bg-[#E7E1B1]/30 border border-[#E7E1B1] 
                 rounded-xl overflow-hidden shadow-sm"
             >
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr
-                    className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
-                      text-[#0D530E] font-bold tracking-wider uppercase text-[10px]"
-                  >
-                    <th className="p-4">Pod Name</th>
-                    <th className="p-4">Namespace</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Container Image</th>
-                    <th className="p-4 text-center">Age</th>
-                    <th className="p-4 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
-                  {clusterPods.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="p-8 text-center text-slate-400 italic bg-[#FBF5DD]/30"
-                      >
-                        No active pods found inside the current boundary
-                        context.
-                      </td>
+              <div className="max-h-[480px] overflow-y-auto pr-px scrollbar-thin">
+                <table className="w-full text-left border-collapse text-xs relative">
+                  <thead>
+                    <tr
+                      className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
+                      text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
+                      sticky top-0 z-10"
+                    >
+                      <th className="p-4">Pod Name</th>
+                      <th className="p-4">Namespace</th>
+                      <th className="p-4">Status</th>
+                      <th className="p-4">Container Image</th>
+                      <th className="p-4 text-center">Age</th>
+                      <th className="p-4 text-center">Action</th>
                     </tr>
-                  ) : (
-                    clusterPods.map((pod) => {
-                      const isSystemCore = pod.name.includes("kubedash-");
-                      return (
-                        <tr
-                          key={pod.name}
-                          className={`transition-colors border-b border-[#E7E1B1]/10 ${
-                            isSystemCore
-                              ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500" // system core
-                              : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent" // normal rows
-                          }`}
+                  </thead>
+                  <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
+                    {clusterPods.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-8 text-center text-slate-400 italic bg-[#FBF5DD]/30"
                         >
-                          <td className="p-4 font-bold text-[#0D530E]">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span>{pod.name}</span>
+                          No active pods found inside the current boundary
+                          context.
+                        </td>
+                      </tr>
+                    ) : (
+                      clusterPods.map((pod) => {
+                        const isSystemCore = pod.name.includes("kubedash-");
+                        return (
+                          <tr
+                            key={pod.name}
+                            className={`transition-colors border-b border-[#E7E1B1]/10 ${
+                              isSystemCore
+                                ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500" // system core
+                                : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent" // normal rows
+                            }`}
+                          >
+                            <td className="p-4 font-bold text-[#0D530E]">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span>{pod.name}</span>
 
-                              {/* "System Core" badge */}
-                              {isSystemCore && (
-                                <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 text-amber-800 border border-amber-600/20 shadow-sm">
-                                  System Core
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-slate-600">
-                            {pod.namespace}
-                          </td>
-                          <td className="p-4">
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] 
+                                {/* "System Core" badge */}
+                                {isSystemCore && (
+                                  <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 text-amber-800 border border-amber-600/20 shadow-sm">
+                                    System Core
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 text-slate-600">
+                              {pod.namespace}
+                            </td>
+                            <td className="p-4">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] 
                               font-bold tracking-wide uppercase ${
                                 pod.status === "Running"
                                   ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
@@ -736,104 +737,108 @@ export default function App() {
                                     ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
                                     : "bg-red-600/10 text-red-700 border border-red-600/20"
                               }`}
-                            >
-                              {pod.status}
-                            </span>
-                          </td>
-                          <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
-                            {pod.image}
-                          </td>
-                          <td className="p-4 text-center text-slate-500 font-medium">
-                            {formatPodAge(pod.age_seconds)}
-                          </td>
-                          <td className="p-4 text-center">
-                            <div className="flex justify-center gap-2">
-                              <button
-                                onClick={() => setLogPod(pod)}
-                                className="px-2 py-1 text-[10px] font-bold 
+                              >
+                                {pod.status}
+                              </span>
+                            </td>
+                            <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
+                              {pod.image}
+                            </td>
+                            <td className="p-4 text-center text-slate-500 font-medium">
+                              {formatPodAge(pod.age_seconds)}
+                            </td>
+                            <td className="p-4 text-center">
+                              <div className="flex justify-center gap-2">
+                                <button
+                                  onClick={() => setLogPod(pod)}
+                                  className="px-2 py-1 text-[10px] font-bold 
                                 text-amber-800 hover:text-white bg-amber-500/10 
                                 hover:bg-amber-600 border border-amber-500/20 
                                 rounded-md transition-all cursor-pointer"
-                              >
-                                Logs
-                              </button>
-                              <button
-                                onClick={() => setSshPod(pod)}
-                                className="px-2 py-1 text-[10px] font-bold 
+                                >
+                                  Logs
+                                </button>
+                                <button
+                                  onClick={() => setSshPod(pod)}
+                                  className="px-2 py-1 text-[10px] font-bold 
                                 text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
                                 hover:bg-[#306D29] border border-[#306D29]/20 
                                 rounded-md transition-all cursor-pointer"
-                              >
-                                Terminal
-                              </button>
-                              <button
-                                onClick={() =>
-                                  onTriggerRestartClick(pod.namespace, pod.name)
-                                }
-                                disabled={isRestarting === pod.name}
-                                title="Trigger Restart"
-                                className="p-1.5 rounded-lg border border-[#E7E1B1] bg-white text-[#306D29] 
+                                >
+                                  Terminal
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    onTriggerRestartClick(
+                                      pod.namespace,
+                                      pod.name,
+                                    )
+                                  }
+                                  disabled={isRestarting === pod.name}
+                                  title="Trigger Restart"
+                                  className="p-1.5 rounded-lg border border-[#E7E1B1] bg-white text-[#306D29] 
                                   hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
                                   disabled:opacity-40 shadow-sm flex items-center justify-center"
-                              >
-                                {isRestarting === pod.name ? (
-                                  <svg
-                                    className="animate-spin h-3.5 w-3.5 text-[#0D530E]"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
+                                >
+                                  {isRestarting === pod.name ? (
+                                    <svg
+                                      className="animate-spin h-3.5 w-3.5 text-[#0D530E]"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <circle
+                                        className="opacity-25"
+                                        cx="12"
+                                        cy="12"
+                                        r="10"
+                                        stroke="currentColor"
+                                        strokeWidth="4"
+                                      />
+                                      <path
+                                        className="opacity-75"
+                                        fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                      />
+                                    </svg>
+                                  ) : (
+                                    <svg
+                                      className="h-3.5 w-3.5"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
                                       stroke="currentColor"
-                                      strokeWidth="4"
-                                    />
-                                    <path
-                                      className="opacity-75"
-                                      fill="currentColor"
-                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    />
-                                  </svg>
-                                ) : (
-                                  <svg
-                                    className="h-3.5 w-3.5"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2.5}
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                                    />
-                                  </svg>
-                                )}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleDeletePod(pod.namespace, pod.name)
-                                }
-                                disabled={deletingPod === pod.name}
-                                className="px-2.5 py-1 text-[10px] font-bold 
+                                      strokeWidth={2.5}
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                      />
+                                    </svg>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleDeletePod(pod.namespace, pod.name)
+                                  }
+                                  disabled={deletingPod === pod.name}
+                                  className="px-2.5 py-1 text-[10px] font-bold 
                                 text-red-700 hover:text-white bg-red-600/10 
                                 hover:bg-red-600 border border-red-600/20 rounded-md 
                                 transition-all cursor-pointer disabled:opacity-40"
-                              >
-                                {deletingPod === pod.name
-                                  ? "Killing..."
-                                  : "Delete"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                                >
+                                  {deletingPod === pod.name
+                                    ? "Killing..."
+                                    : "Delete"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ) : activeTab == "audit" ? (
