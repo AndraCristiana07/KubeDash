@@ -107,5 +107,8 @@ func GetOverviewLogs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": logs})
+	c.JSON(http.StatusOK, gin.H{
+		"count": len(logs),
+		"data":  logs,
+	})
 }

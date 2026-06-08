@@ -93,10 +93,15 @@ export default function App() {
   // fetch saved database logs
   const fetchClusterLogs = async () => {
     try {
-      const res = await fetch(
-        `${GO_API}/api/logs/overview?namespace=${targetNamespace}`,
-      );
+      const timestamp = new Date().getTime();
+      const url = `${GO_API}/api/logs/overview?namespace=${targetNamespace}&_t=${timestamp}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+      });
+
       const json = await res.json();
+
       setDbLogs(json.data || []);
     } catch (err) {
       console.error("Failed fetching logs from Go backend:", err);
@@ -133,9 +138,9 @@ export default function App() {
         toast.success(
           (t) => (
             <div className="flex items-start gap-3 justify-between w-full">
-              <span className="text-xs text-zinc-200 leading-relaxed">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
                 Pod{" "}
-                <span className="font-mono font-bold text-rose-400">
+                <span className="font-mono font-bold text-[#306D29]">
                   "{name}"
                 </span>{" "}
                 termination executed safely. Kubernetes is stopping pod...
@@ -146,35 +151,48 @@ export default function App() {
                   toast.dismiss(t.id);
                   toast.remove(t.id);
                 }}
-                className="text-zinc-500 hover:text-zinc-200 p-0.5 
-                  rounded transition-colors focus:outline-none cursor-pointer"
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
                 aria-label="Close alert"
               >
-                X
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
               </button>
             </div>
           ),
           {
-            duration: 4000,
+            duration: 5000,
             position: "top-right",
             style: {
-              background: "#113a26",
-              color: "#e4e4e7",
-              border: "1px solid rgba(225, 59, 59, 0.2)",
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
             },
           },
         );
 
-        // refresh active data tables
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errText = await res.text();
 
-        // error toast if it failed to delete pod
         toast.error(
           (t) => (
             <div className="flex items-start gap-3 justify-between w-full">
-              <span className="text-xs text-red-200">
+              <span className="text-xs text-red-800 font-semibold">
                 Failed to delete pod: {errText}
               </span>
               <button
@@ -183,16 +201,35 @@ export default function App() {
                   toast.dismiss(t.id);
                   toast.remove(t.id);
                 }}
-                className="text-red-400/50 hover:text-red-200 p-0.5 rounded transition-colors focus:outline-none cursor-pointer"
+                className="text-red-700/50 hover:text-red-700 p-0.5 rounded transition-colors focus:outline-none cursor-pointer flex-shrink-0"
                 aria-label="Close alert"
               >
-                X
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
               </button>
             </div>
           ),
           {
             duration: 6000,
             position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #dc2626",
+              maxWidth: "420px",
+              width: "100%",
+            },
           },
         );
       }
@@ -282,16 +319,19 @@ export default function App() {
               <div
                 className={`${
                   t.visible ? "animate-enter" : "animate-leave"
-                } max-w-md w-full bg-red-950 border border-red-500/30 shadow-2xl rounded-xl pointer-events-auto flex p-4 text-left`}
+                } max-w-md w-full bg-[#FBF5DD] border-2 border-red-600/30 
+                shadow-xl rounded-xl pointer-events-auto flex p-4 
+                text-left justify-between items-start gap-3 
+                border-l-4 border-l-red-600`}
               >
                 <div className="flex-1">
-                  <p className="text-xs font-mono font-bold text-red-400">
+                  <p className="text-xs font-mono font-bold text-red-800">
                     ⚠️ CLUSTER WARNING ({namespaceText})
                   </p>
-                  <p className="text-xs text-red-200 mt-1 font-semibold">
+                  <p className="text-xs text-[#0D530E] mt-1 font-semibold">
                     Pod: {podText}
                   </p>
-                  <p className="text-xs text-red-300/80 mt-1 line-clamp-3">
+                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3">
                     {msgText}
                   </p>
                 </div>
@@ -301,12 +341,24 @@ export default function App() {
                     toast.dismiss(t.id);
                     toast.remove(t.id);
                   }}
-                  className="flex items-center justify-center rounded-lg 
-                    p-1 text-red-400/60 hover:text-red-200 hover:bg-red-900/40 
-                    transition-all focus:outline-none"
-                  aria-label="Close notification"
+                  className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                  aria-label="Close alert"
                 >
-                  X
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
                 </button>
               </div>
             ),
