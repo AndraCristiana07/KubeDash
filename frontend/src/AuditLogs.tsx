@@ -21,24 +21,28 @@ export default function AuditLogView({
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [namespaceFilter, setNamespaceFilter] = useState<string>(
-    activeNamespace || "all",
-  );
+  const [namespaceFilter] = useState<string>(activeNamespace || "all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [rowLimit, setRowLimit] = useState<number>(50);
 
-  const fetchAuditHistory = async () => {
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalItems, setTotalItems] = useState<number>(0);
+
+  const fetchAuditHistory = async (pageToFetch = currentPage) => {
     setLoading(true);
     try {
       const nsParam = namespaceFilter === "all" ? "" : namespaceFilter;
       const lvlParam = severityFilter === "all" ? "" : severityFilter;
 
-      const url = `${goApiUrl}/api/logs?namespace=${nsParam}&level=${lvlParam}&search=${encodeURIComponent(searchQuery)}&limit=${rowLimit}`;
+      const url = `${goApiUrl}/api/logs?namespace=${nsParam}&level=${lvlParam}&search=${encodeURIComponent(searchQuery)}&limit=${rowLimit}&page=${pageToFetch}`;
 
       const res = await fetch(url);
       if (!res.ok) throw new Error("Could not fetch log matrix");
       const data = await res.json();
+
       setLogs(data.logs || []);
+      setTotalItems(data.total_items || 0);
+      setCurrentPage(data.current_page || 1);
     } catch (err) {
       console.error("Audit history loading failure:", err);
     } finally {
@@ -47,8 +51,17 @@ export default function AuditLogView({
   };
 
   useEffect(() => {
-    fetchAuditHistory();
+    setCurrentPage(1);
+    fetchAuditHistory(1);
   }, [namespaceFilter, severityFilter, rowLimit]);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setCurrentPage(newPage);
+    fetchAuditHistory(newPage);
+  };
+
+  const totalPages = Math.ceil(totalItems / rowLimit) || 1;
 
   return (
     <div
@@ -117,22 +130,22 @@ export default function AuditLogView({
           <select
             value={rowLimit}
             onChange={(e) => setRowLimit(Number(e.target.value))}
-            className="px-2.5 py-1.5 text-xs bg-white/80 border border-[#E7E1B1] 
-                rounded-lg text-[#0D530E] focus:outline-none focus:border-[#306D29] 
-                cursor-pointer font-medium shadow-sm"
+            className="px-2.5 py-1.5 text-xs bg-white/80 border 
+                border-[#E7E1B1] rounded-lg text-[#0D530E] focus:outline-none 
+                focus:border-[#306D29] cursor-pointer font-medium shadow-sm"
           >
-            <option value={25}>Show 25</option>
-            <option value={50}>Show 50</option>
-            <option value={100}>Show 100</option>
+            <option value={10}>10 per page</option>
+            <option value={25}>25 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
           </select>
 
           <button
-            onClick={fetchAuditHistory}
+            onClick={() => fetchAuditHistory(currentPage)}
             disabled={loading}
             className="px-3 py-1.5 bg-[#306D29] hover:bg-[#0D530E] 
-                active:bg-[#0D530E]/90 disabled:opacity-40 text-[#FBF5DD] 
-                text-xs min-w-[150px] font-semibold rounded-lg transition-all 
-                shadow-sm cursor-pointer"
+                active:bg-[#0D530E]/90 disabled:opacity-40 text-[#FBF5DD] text-xs 
+                min-w-[150px] font-semibold rounded-lg transition-all shadow-sm cursor-pointer"
           >
             {loading ? "Syncing..." : "Refresh"}
           </button>
@@ -205,7 +218,10 @@ export default function AuditLogView({
                     >
                       {log.message}
                     </td>
-                    <td className="px-4 py-3 text-[#306D29]/70 font-mono text-right whitespace-nowrap">
+                    <td
+                      className="px-4 py-3 text-[#306D29]/70 font-mono 
+                        text-right whitespace-nowrap"
+                    >
                       {new Date(log.created_at).toLocaleString(undefined, {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -219,6 +235,48 @@ export default function AuditLogView({
             )}
           </tbody>
         </table>
+      </div>
+      {/* pagination */}
+      <div
+        className="flex items-center justify-between border-t-0 border 
+            border-[#E7E1B1] bg-[#E7E1B1]/20 px-4 py-3 rounded-b-lg text-xs font-medium"
+      >
+        <div className="text-[#306D29]">
+          Showing{" "}
+          <span className="font-bold text-[#0D530E]">{logs.length}</span> of{" "}
+          <span className="font-bold text-[#0D530E]">{totalItems}</span> audit
+          events
+        </div>
+
+        <div className="flex items-center gap-4">
+          <span className="text-[#306D29]">
+            Page <span className="font-bold text-[#0D530E]">{currentPage}</span>{" "}
+            of <span className="font-bold text-[#0D530E]">{totalPages}</span>
+          </span>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || loading}
+              className="px-3 py-1 bg-white border border-[#E7E1B1] 
+                text-[#0D530E] hover:bg-[#FBF5DD] disabled:opacity-40 
+                rounded-md transition-all font-semibold shadow-sm 
+                cursor-pointer disabled:cursor-not-allowed"
+            >
+              {"<"} Prev
+            </button>
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
+              className="px-3 py-1 bg-white border border-[#E7E1B1] 
+                text-[#0D530E] hover:bg-[#FBF5DD] disabled:opacity-40 
+                rounded-md transition-all font-semibold shadow-sm 
+                cursor-pointer disabled:cursor-not-allowed"
+            >
+              Next {">"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

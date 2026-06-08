@@ -34,39 +34,57 @@ func GetLogs(c *gin.Context) {
 	level := c.Query("level")
 	search := c.Query("search")
 	limitStr := c.DefaultQuery("limit", "50")
+	pageStr := c.DefaultQuery("page", "1") // default to page 1
+
+	// pagination constraints safely
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 50
+	}
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page <= 0 {
+		page = 1
+	}
 
 	// GORM query engine instance
-	query := config.DB.Order("created_at DESC")
+	baseQuery := config.DB.Model(&models.ClusterLog{})
 
 	// namespace filter
 	if namespace != "" && namespace != "all" && namespace != "*" {
-		query = query.Where("namespace = ?", namespace)
+		baseQuery = baseQuery.Where("namespace = ?", namespace)
 	}
 
 	// severity level filter (Normal or Warning)
 	if level != "" && level != "all" {
-		query = query.Where("level = ?", level)
+		baseQuery = baseQuery.Where("level = ?", level)
 	}
 
 	// string search matching
 	if search != "" {
-		query = query.Where("message ILIKE ? OR pod_name ILIKE ?", "%"+search+"%", "%"+search+"%")
+		baseQuery = baseQuery.Where("message ILIKE ? OR pod_name ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = 50 // safe fallback barrier
+	// total record count matching filters
+	var totalRows int64
+	if err := baseQuery.Count(&totalRows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count rows: " + err.Error()})
+		return
 	}
-	query = query.Limit(limit)
 
-	if err := query.Find(&logs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query audit repository: " + err.Error()})
+	// fetchpaginated chunk
+	offset := (page - 1) * limit
+	err = baseQuery.Order("created_at DESC").Limit(limit).Offset(offset).Find(&logs).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query chunk logs: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"count": len(logs),
-		"logs":  logs,
+		"logs":         logs,
+		"total_items":  totalRows,
+		"current_page": page,
+		"limit":        limit,
 	})
 }
 
