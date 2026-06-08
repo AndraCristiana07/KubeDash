@@ -648,6 +648,9 @@ func handleGetConfigurations(c *gin.Context) {
 	}
 
 	namespace := c.DefaultQuery("namespace", "default")
+	if namespace == "all" || namespace == "*" || namespace == "" {
+		namespace = ""
+	}
 	var resources []ConfigResource
 
 	// fetch ConfigMaps

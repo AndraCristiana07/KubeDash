@@ -23,8 +23,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     Record<string, boolean>
   >({});
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchClusterConfigs = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch(
         `${GO_API}/api/cluster/config?namespace=${targetNamespace}`,
@@ -35,6 +37,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     } catch (err) {
       console.error("Failed fetching config maps & secrets:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -169,10 +173,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <hr className="border-[#E7E1B1]" />
 
-        {/* resource selection Box Grid */}
+        {/* resource selection box grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1">
-          {configs.length === 0 ? (
-            <div className="col-span-2 text-center py-4 text-xs font-mono text-slate-400">
+          {isLoading ? (
+            <div className="col-span-2 flex flex-col items-center justify-center py-6 space-y-2 animate-pulse">
+              <svg
+                className="animate-spin h-5 w-5 text-[#306D29]"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span className="text-[10px] font-mono text-slate-500 font-bold tracking-wide">
+                Scraping cluster configurations...
+              </span>
+            </div>
+          ) : configs.length === 0 ? (
+            <div className="col-span-2 text-center py-8 text-xs font-mono text-slate-400">
               No custom configuration objects or tokens detected.
             </div>
           ) : (
