@@ -40,6 +40,11 @@ type PodTableEntry struct {
 	Ageseconds int    `json:"age_seconds"`
 }
 
+type RestartRequest struct {
+	Namespace string `json:"namespace" binding:"required"`
+	PodName   string `json:"pod_name" binding:"required"`
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -122,6 +127,7 @@ func main() {
 		api.GET("/cluster/ssh", handlePodSSH)
 		api.GET("/cluster/logs/stream", handlePodLogStream)
 		api.GET("/cluster/notifications", handleNotificationStream)
+		api.POST("/cluster/restart", handleRestartDeployment)
 	}
 
 	// start Server on port 8080
@@ -508,6 +514,121 @@ func handleNotificationStream(c *gin.Context) {
 			break
 		}
 	}
+}
+
+func handleRestartDeployment(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req RestartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or pod_name parameters"})
+		return
+	}
+
+	// fetch the target live Pod
+	pod, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod not found: " + err.Error()})
+		return
+	}
+
+	// check for a managing ReplicaSet
+	var replicaSetName string
+	for _, ref := range pod.OwnerReferences {
+		if ref.Kind == "ReplicaSet" {
+			replicaSetName = ref.Name
+			break
+		}
+	}
+
+	// deployment managed struct
+	if replicaSetName != "" {
+		replicaSet, err := clientset.AppsV1().ReplicaSets(req.Namespace).Get(context.TODO(), replicaSetName, metav1.GetOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to map pod ancestry: " + err.Error()})
+			return
+		}
+
+		var deploymentName string
+		for _, ref := range replicaSet.OwnerReferences {
+			if ref.Kind == "Deployment" {
+				deploymentName = ref.Name
+				break
+			}
+		}
+
+		if deploymentName != "" {
+			// rolling update annotation patch
+			timestamp := time.Now().Format(time.RFC3339)
+			patchData := fmt.Sprintf(
+				`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"%s"}}}}}`,
+				timestamp,
+			)
+
+			_, err = clientset.AppsV1().Deployments(req.Namespace).Patch(
+				context.TODO(),
+				deploymentName,
+				"application/strategic-merge-patch+json",
+				[]byte(patchData),
+				metav1.PatchOptions{},
+			)
+
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Deployment rollout patch failed: " + err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"message": fmt.Sprintf("Rolling restart successfully dispatched for deployment: %s", deploymentName),
+			})
+			return
+		}
+	}
+
+	log.Printf("[RESTART FALLBACK] Raw naked pod detected: %s. Re-spinning container instance...", req.PodName)
+
+	// if it's a standalone pod lifecycle
+	// make an isolated clean manifest from the old pod spec config
+	nakedPodManifest := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        pod.Name,
+			Namespace:   pod.Namespace,
+			Labels:      pod.Labels,
+			Annotations: pod.Annotations,
+		},
+		Spec: pod.Spec,
+	}
+	// clear dynamic cluster runtime state specifications
+	nakedPodManifest.ResourceVersion = ""
+	nakedPodManifest.UID = ""
+	nakedPodManifest.CreationTimestamp = metav1.Time{}
+
+	// delete transaction with a short grace duration
+	gracePeriod := int64(2)
+	err = clientset.CoreV1().Pods(req.Namespace).Delete(context.TODO(), req.PodName, metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriod,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed terminating old standalone instance: " + err.Error()})
+		return
+	}
+
+	// wait a moment for the namespace thread lock to drop old instance configurations
+	time.Sleep(1200 * time.Millisecond)
+
+	// identical copy
+	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), nakedPodManifest, metav1.CreateOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed re-bootstrapping standalone clone pod: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Standalone pod instance '%s' cycled and recreated successfully.", req.PodName),
+	})
 }
 
 func homeDir() string {
