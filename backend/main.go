@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,6 +138,7 @@ func main() {
 		api.POST("/cluster/restart", handleRestartDeployment)
 		api.GET("/cluster/config", handleGetConfigurations)
 		api.POST("/cluster/config/update", handleUpdateConfiguration)
+		api.POST("/cluster/config/create", handleCreateConfiguration)
 	}
 
 	// start Server on port 8080
@@ -749,6 +751,75 @@ func handleUpdateConfiguration(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Configuration object securely synchronized with cluster state"})
+}
+
+// create new ConfigMaps and Secrets
+func handleCreateConfiguration(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req ConfigResource
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+
+	if req.Name == "" || req.Namespace == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name and Namespace scopes are required properties"})
+		return
+	}
+
+	// fallback context validation logic
+	req.Namespace = strings.TrimSpace(strings.ToLower(req.Namespace))
+	if req.Namespace == "" || req.Namespace == "all" {
+		req.Namespace = "default"
+	}
+	switch req.Type {
+	case "configmap":
+		newCm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name,
+				Namespace: req.Namespace,
+			},
+			Data: req.Data,
+		}
+		if newCm.Data == nil {
+			newCm.Data = make(map[string]string)
+		}
+
+		_, err := clientset.CoreV1().ConfigMaps(req.Namespace).Create(context.TODO(), newCm, metav1.CreateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "secret":
+		newSec := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name,
+				Namespace: req.Namespace,
+			},
+			Type: corev1.SecretTypeOpaque, // key-value secret type
+			Data: make(map[string][]byte),
+		}
+
+		// loop and convert plain-text fields into standard byte streams
+		for k, v := range req.Data {
+			newSec.Data[k] = []byte(v)
+		}
+
+		_, err := clientset.CoreV1().Secrets(req.Namespace).Create(context.TODO(), newSec, metav1.CreateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported configuration type"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Resource block successfully provisioned inside cluster"})
 }
 
 func homeDir() string {
