@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import TerminalModal from "./Terminal";
 import LogStreamModal from "./LogStream";
+import AuditLogView from "./AuditLogs";
 import toast, { Toaster } from "react-hot-toast";
 
 interface ClusterLog {
@@ -28,9 +29,9 @@ const WB =
   "ws://localhost:8080";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"overview" | "settings" | "pods">(
-    "overview",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "settings" | "pods" | "audit"
+  >("overview");
 
   const [podsCount, setPodsCount] = useState<number>(0);
   const [nodesTotal, setNodesTotal] = useState<number>(0);
@@ -93,7 +94,7 @@ export default function App() {
   const fetchClusterLogs = async () => {
     try {
       const res = await fetch(
-        `${GO_API}/api/logs?namespace=${targetNamespace}`,
+        `${GO_API}/api/logs/overview?namespace=${targetNamespace}`,
       );
       const json = await res.json();
       setDbLogs(json.data || []);
@@ -373,6 +374,16 @@ export default function App() {
               Pods Management
             </button>
             <button
+              onClick={() => setActiveTab("audit")}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                activeTab === "audit"
+                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+              }`}
+            >
+              Audit logs
+            </button>
+            <button
               onClick={() => setActiveTab("settings")}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === "settings"
@@ -646,6 +657,8 @@ export default function App() {
               </table>
             </div>
           </div>
+        ) : activeTab == "audit" ? (
+          <AuditLogView goApiUrl={GO_API} activeNamespace={targetNamespace} />
         ) : (
           /* settings */
           <div

@@ -114,6 +114,7 @@ func main() {
 	{
 		api.POST("/logs", controllers.CreateLog)
 		api.GET("/logs", controllers.GetLogs)
+		api.GET("/logs/overview", controllers.GetOverviewLogs)
 		api.GET("/cluster/summary", getClusterSummary)
 		api.POST("/cluster/deploy", deployNewPod)
 		api.GET("/cluster/pods", getClusterPods)
