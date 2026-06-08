@@ -45,6 +45,13 @@ type RestartRequest struct {
 	PodName   string `json:"pod_name" binding:"required"`
 }
 
+type ConfigResource struct {
+	Type      string            `json:"type"` // "configmap" or "secret"
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	Data      map[string]string `json:"data"`
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -128,6 +135,8 @@ func main() {
 		api.GET("/cluster/logs/stream", handlePodLogStream)
 		api.GET("/cluster/notifications", handleNotificationStream)
 		api.POST("/cluster/restart", handleRestartDeployment)
+		api.GET("/cluster/config", handleGetConfigurations)
+		api.POST("/cluster/config/update", handleUpdateConfiguration)
 	}
 
 	// start Server on port 8080
@@ -629,6 +638,114 @@ func handleRestartDeployment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Standalone pod instance '%s' cycled and recreated successfully.", req.PodName),
 	})
+}
+
+// list all ConfigMaps and Secrets inside a namespace
+func handleGetConfigurations(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	namespace := c.DefaultQuery("namespace", "default")
+	var resources []ConfigResource
+
+	// fetch ConfigMaps
+	cms, err := clientset.CoreV1().ConfigMaps(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, cm := range cms.Items {
+			// ignore system generated internal configuration resources
+			if cm.Name == "kube-root-ca.crt" {
+				continue
+			}
+
+			resources = append(resources, ConfigResource{
+				Type:      "configmap",
+				Name:      cm.Name,
+				Namespace: cm.Namespace,
+				Data:      cm.Data,
+			})
+		}
+	}
+
+	// fetch secrets
+	secs, err := clientset.CoreV1().Secrets(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, sec := range secs.Items {
+			if sec.Type == corev1.SecretTypeServiceAccountToken || sec.Type == corev1.SecretTypeBootstrapToken {
+				continue
+			}
+
+			// translate byte arrays in text strings
+			decodedData := make(map[string]string)
+			for k, v := range sec.Data {
+				decodedData[k] = string(v)
+			}
+
+			resources = append(resources, ConfigResource{
+				Type:      "secret",
+				Name:      sec.Name,
+				Namespace: sec.Namespace,
+				Data:      decodedData,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, resources)
+}
+
+// save modified configuration to the cluster context
+func handleUpdateConfiguration(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req ConfigResource
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload schema: " + err.Error()})
+		return
+	}
+
+	switch req.Type {
+	case "configmap":
+		// fetch original item
+		cm, err := clientset.CoreV1().ConfigMaps(req.Namespace).Get(context.TODO(), req.Name, metav1.GetOptions{})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ConfigMap not found: " + err.Error()})
+			return
+		}
+		cm.Data = req.Data
+		_, err = clientset.CoreV1().ConfigMaps(req.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "secret":
+		sec, err := clientset.CoreV1().Secrets(req.Namespace).Get(context.TODO(), req.Name, metav1.GetOptions{})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Secret not found: " + err.Error()})
+			return
+		}
+
+		// eeencode plain text back into binary
+		encodedData := make(map[string][]byte)
+		for k, v := range req.Data {
+			encodedData[k] = []byte(v)
+		}
+		sec.Data = encodedData
+
+		_, err = clientset.CoreV1().Secrets(req.Namespace).Update(context.TODO(), sec, metav1.UpdateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported resource engine type"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Configuration object securely synchronized with cluster state"})
 }
 
 func homeDir() string {

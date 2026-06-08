@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import TerminalModal from "./Terminal";
 import LogStreamModal from "./LogStream";
 import AuditLogView from "./AuditLogs";
+import { SettingsPanel } from "./SettingsPanel";
 import toast, { Toaster } from "react-hot-toast";
 
 interface ClusterLog {
@@ -576,7 +577,7 @@ export default function App() {
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className={`px-4 py-2 text-xs min-w-[150px] text-center font-bold rounded-lg border 
+                  className={`px-4 py-2 text-xs md:min-w-[150px] text-center font-bold rounded-lg border 
                     transition-all active:scale-95 cursor-pointer ${
                       isRefreshing
                         ? "bg-[#FBF5DD]/20 border-[#E7E1B1]/60 text-[#0D530E]/70 cursor-not-allowed"
@@ -648,6 +649,7 @@ export default function App() {
           </div>
         ) : activeTab === "pods" ? (
           /* pods table */
+          // TODO: make table scrollable
           <div className="w-full max-w-4xl mx-auto space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -838,75 +840,14 @@ export default function App() {
           <AuditLogView goApiUrl={GO_API} activeNamespace={targetNamespace} />
         ) : (
           /* settings */
-          <div
-            className="w-full max-w-2xl mx-auto bg-[#E7E1B1]/30 border 
-              border-[#E7E1B1] rounded-xl p-6 space-y-6"
-          >
-            <div>
-              <h2 className="text-lg font-black text-[#0D530E]">
-                Engine Configuration
-              </h2>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
-                Customize KubeDash telemetry capture parameters.
-              </p>
-            </div>
-
-            <hr className="border-[#E7E1B1]" />
-
-            <div className="space-y-4">
-              {/* refresh interval */}
-              <div
-                className="flex items-center justify-between bg-[#FBF5DD]/50 
-                  p-4 rounded-xl border border-[#E7E1B1]"
-              >
-                <div className="space-y-0.5">
-                  <div className="text-sm font-bold text-[#0D530E]">
-                    Metrics Polling Frequency
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Sets how often the UI scrapes telemetry endpoints.
-                  </div>
-                </div>
-                <select
-                  value={refreshInterval}
-                  onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                  className="bg-[#FBF5DD] border border-[#E7E1B1] text-[#0D530E] 
-                    rounded-lg px-3 py-1.5 text-xs font-semibold outline-none 
-                    focus:border-[#306D29] cursor-pointer"
-                >
-                  <option value={2000}>High Speed (2s)</option>
-                  <option value={4000}>Default (4s)</option>
-                  <option value={10000}>Balanced (10s)</option>
-                  <option value={30000}>Eco Mode (30s)</option>
-                </select>
-              </div>
-
-              {/* target namespace */}
-              <div
-                className="flex items-center justify-between bg-[#FBF5DD]/50 
-                  p-4 rounded-xl border border-[#E7E1B1]"
-              >
-                <div className="space-y-0.5">
-                  <div className="text-sm font-bold text-[#0D530E]">
-                    Target Namespace Context
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Filters core workloads to a designated isolation boundary.
-                  </div>
-                </div>
-                <input
-                  type="text"
-                  value={targetNamespace}
-                  onChange={(e) =>
-                    setTargetNamespace(e.target.value.toLowerCase().trim())
-                  }
-                  className="w-32 bg-[#FBF5DD] border border-[#E7E1B1] 
-                    text-[#0D530E] focus:border-[#306D29] rounded-lg px-3 
-                    py-1.5 text-xs outline-none font-mono text-center font-bold"
-                />
-              </div>
-            </div>
-          </div>
+          <SettingsPanel
+            GO_API={GO_API}
+            targetNamespace={targetNamespace}
+            setTargetNamespace={setTargetNamespace}
+            refreshInterval={refreshInterval}
+            setRefreshInterval={setRefreshInterval}
+            toast={toast}
+          />
         )}
       </main>
 
