@@ -128,13 +128,80 @@ export default function App() {
       );
 
       if (res.ok) {
+        // success toast
+        toast.success(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-zinc-200 leading-relaxed">
+                Pod{" "}
+                <span className="font-mono font-bold text-rose-400">
+                  "{name}"
+                </span>{" "}
+                termination executed safely. Kubernetes is stopping pod...
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-zinc-500 hover:text-zinc-200 p-0.5 
+                  rounded transition-colors focus:outline-none cursor-pointer"
+                aria-label="Close alert"
+              >
+                X
+              </button>
+            </div>
+          ),
+          {
+            duration: 4000,
+            position: "top-right",
+            style: {
+              background: "#113a26",
+              color: "#e4e4e7",
+              border: "1px solid rgba(225, 59, 59, 0.2)",
+            },
+          },
+        );
+
+        // refresh active data tables
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errText = await res.text();
-        alert(`Failed to delete pod: ${errText}`);
+
+        // error toast if it failed to delete pod
+        toast.error(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-red-200">
+                Failed to delete pod: {errText}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-red-400/50 hover:text-red-200 p-0.5 rounded transition-colors focus:outline-none cursor-pointer"
+                aria-label="Close alert"
+              >
+                X
+              </button>
+            </div>
+          ),
+          {
+            duration: 6000,
+            position: "top-right",
+          },
+        );
       }
     } catch (err) {
       console.error("Error executing pod termination:", err);
+      // error toast if there's network errors
+      toast.error("Network or infrastructure system error occurred.", {
+        duration: 5000,
+        position: "top-right",
+      });
     } finally {
       setDeletingPod(null);
     }
