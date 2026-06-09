@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 interface SettingsPanelProps {
   GO_API: string;
@@ -39,6 +39,37 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   ]);
 
   const [isBulkMode, setIsBulkMode] = useState<boolean>(false);
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const parseEnvStringContent = (textString: string) => {
+    const lines = textString.split("\n");
+    const parsedFields = lines
+      .map((line) => {
+        // skip comments or empty whitespace breaks
+        if (line.trim().startsWith("#") || line.trim() === "") return null;
+
+        const equalIndex = line.indexOf("=");
+        if (equalIndex === -1) return null;
+
+        const rawKey = line.substring(0, equalIndex).trim();
+        const rawValue = line.substring(equalIndex + 1).trim();
+
+        if (!rawKey) return null;
+
+        return {
+          key: rawKey.toUpperCase().replace(/[^A-Z0-9_]/g, ""),
+          value: rawValue,
+        };
+      })
+      .filter(
+        (field): field is { key: string; value: string } => field !== null,
+      );
+
+    setNewBlockFields(
+      parsedFields.length > 0 ? parsedFields : [{ key: "", value: "" }],
+    );
+  };
 
   const fetchClusterConfigs = async () => {
     setIsLoading(true);
@@ -582,57 +613,98 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
 
               {isBulkMode ? (
-                // bulk import
+                // drag and drop file
                 <div className="space-y-1 animate-fadeIn">
-                  <textarea
-                    rows={6}
-                    placeholder={
-                      newBlockType === "secret"
-                        ? `POSTGRES_PASSWORD=super_secure_db_pass_99\nJWT_KEY=a7b3c2d9e1f5g4h6_token`
-                        : `DB_HOST=postgres-service.default.svc.cluster.local\nDB_PORT=5432\nLOG_LEVEL=DEBUG\nENABLE_CACHE=true`
-                    }
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".env,text/plain"
+                    className="hidden"
                     onChange={(e) => {
-                      const lines = e.target.value.split("\n");
-                      const parsedFields = lines
-                        .map((line) => {
-                          if (line.trim().startsWith("#") || line.trim() === "")
-                            return null;
-                          const equalIndex = line.indexOf("=");
-                          if (equalIndex === -1) return null;
-
-                          const rawKey = line.substring(0, equalIndex).trim();
-                          const rawValue = line
-                            .substring(equalIndex + 1)
-                            .trim();
-
-                          if (!rawKey) return null;
-
-                          return {
-                            key: rawKey
-                              .toUpperCase()
-                              .replace(/[^A-Z0-9_]/g, ""),
-                            value: rawValue,
-                          };
-                        })
-                        .filter(
-                          (field): field is { key: string; value: string } =>
-                            field !== null,
-                        );
-
-                      setNewBlockFields(
-                        parsedFields.length > 0
-                          ? parsedFields
-                          : [{ key: "", value: "" }],
-                      );
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const contents = event.target?.result as string;
+                        const textarea = document.getElementById(
+                          "bulk-textarea",
+                        ) as HTMLTextAreaElement;
+                        if (textarea) textarea.value = contents;
+                        parseEnvStringContent(contents);
+                      };
+                      reader.readAsText(file);
                     }}
-                    className="w-full bg-white border border-[#E7E1B1] text-[#0D530E] 
-                      font-mono rounded-xl px-3 py-2 text-xs outline-none 
-                      focus:border-[#306D29] leading-relaxed resize-y"
                   />
-                  <p className="text-[9px] text-slate-400 font-mono italic">
-                    Lines without a clear "=" character assignment layout will
-                    be skipped. Values can contain extra "=" markers safely.
-                  </p>
+
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingFile(true);
+                    }}
+                    onDragLeave={() => setIsDraggingFile(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingFile(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (!file) return;
+
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const contents = event.target?.result as string;
+                        const textarea = document.getElementById(
+                          "bulk-textarea",
+                        ) as HTMLTextAreaElement;
+                        if (textarea) textarea.value = contents;
+                        parseEnvStringContent(contents);
+                      };
+                      reader.readAsText(file);
+                    }}
+                    className={`relative rounded-xl border transition-all ${
+                      isDraggingFile
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-[#E7E1B1] bg-white"
+                    }`}
+                  >
+                    {/* overlay alert layout when a file hover footprint is intercepted */}
+                    {isDraggingFile && (
+                      <div className="absolute inset-0 bg-[#306D29]/10 rounded-xl flex items-center justify-center pointer-events-none animate-pulse">
+                        <span className="text-xs font-mono font-black text-[#0D530E]">
+                          Drop file here to inject properties
+                        </span>
+                      </div>
+                    )}
+
+                    <textarea
+                      id="bulk-textarea"
+                      rows={6}
+                      placeholder={
+                        newBlockType === "secret"
+                          ? `POSTGRES_PASSWORD=super_secure_db_pass_99\nJWT_SECRET_KEY=a7b3c2d9e1f5g4h6_token`
+                          : `#DB_HOST=postgres-service.default.svc.cluster.local\nDB_PORT=5432`
+                      }
+                      onChange={(e) => parseEnvStringContent(e.target.value)}
+                      className="w-full bg-transparent text-[#0D530E] font-mono 
+                        p-3 text-xs outline-none focus:ring-1 focus:ring-[#306D29] 
+                        rounded-xl leading-relaxed resize-y"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center px-1">
+                    <p className="text-[9px] text-slate-400 font-mono italic">
+                      Supports pasting, dragging a <code>.env</code> file, or
+                      clicking the explorer link.
+                    </p>
+
+                    {/* file explorer trigger */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-[10px] text-[#306D29] hover:text-[#0D530E] 
+                        font-extrabold cursor-pointer underline decoration-dotted"
+                    >
+                      📁 Select .env File from Desktop
+                    </button>
+                  </div>
                 </div>
               ) : (
                 // single rows key-value insertion
