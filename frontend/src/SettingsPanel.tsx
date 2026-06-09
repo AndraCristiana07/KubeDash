@@ -159,6 +159,176 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   };
 
+  const handleDeleteConfigBlock = async (name: string, type: string) => {
+    const targetNs = targetNamespace === "all" ? "default" : targetNamespace;
+
+    try {
+      const res = await fetch(`${GO_API}/api/cluster/config/delete`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config_name: name,
+          config_type: type,
+          namespace: targetNs,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+
+        toast.success(
+          (t: any) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Configuration resource{" "}
+                <span className="font-mono font-bold text-[#306D29]">
+                  "{name}"
+                </span>{" "}
+                was deleted safely from the cluster workspace topology.
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                p-0.5 rounded transition-colors focus:outline-none 
+                cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
+
+        setSelectedConfig(null);
+        fetchClusterConfigs();
+      } else {
+        const data = await res.json();
+        const errText = data.error || "Failed dropping configuration maps.";
+
+        toast.error(
+          (t: any) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-red-800 font-semibold leading-relaxed">
+                Failed to delete configuration: {errText}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-red-700/50 hover:text-red-700 p-0.5 rounded 
+                  transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 6000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #dc2626",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
+      }
+    } catch (err) {
+      console.error("Deletion communication context trace error:", err);
+      toast.error(
+        (t: any) => (
+          <div className="flex items-start gap-3 justify-between w-full">
+            <span className="text-xs text-red-800 font-semibold">
+              Network or cluster infrastructure timeout tracking deletion
+              lifecycle.
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.dismiss(t.id);
+                toast.remove(t.id);
+              }}
+              className="text-red-700/50 hover:text-red-700 p-0.5 
+                rounded transition-colors focus:outline-none 
+                cursor-pointer flex-shrink-0"
+              aria-label="Close alert"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        ),
+        {
+          duration: 5000,
+          position: "top-right",
+          style: {
+            background: "#FBF5DD",
+            border: "1px solid #E7E1B1",
+            borderLeft: "4px solid #dc2626",
+            maxWidth: "420px",
+            width: "100%",
+          },
+        },
+      );
+    }
+  };
+
   useEffect(() => {
     if (targetNamespace && targetNamespace !== "all") {
       setNewBlockNamespace(targetNamespace);
@@ -521,35 +691,93 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 No custom configuration objects or tokens detected.
               </div>
             ) : (
-              configs.map((cfg: any) => (
-                <button
-                  key={cfg.name}
-                  type="button"
-                  onClick={() =>
-                    setSelectedConfig(JSON.parse(JSON.stringify(cfg)))
-                  }
-                  className={`p-3 text-left rounded-xl border text-xs 
-                    transition-all flex justify-between items-center cursor-pointer ${
-                      selectedConfig?.name === cfg.name
-                        ? "bg-[#306D29] border-[#306D29] text-white font-bold shadow-sm"
-                        : "bg-[#FBF5DD]/50 border-[#E7E1B1] text-[#0D530E] hover:bg-[#FBF5DD]"
-                    }`}
-                >
-                  <span className="truncate max-w-[155px] font-mono">
-                    {cfg.name}
-                  </span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold 
-                        uppercase tracking-wider ${
-                          cfg.type === "secret"
-                            ? "bg-red-600/10 text-red-700 border border-red-600/20"
-                            : "bg-blue-600/10 text-blue-700 border border-blue-600/20"
-                        }`}
+              configs.map((cfg: any) => {
+                const isCurrentlyInUse =
+                  cfg.bound_pods && cfg.bound_pods.length > 0;
+
+                return (
+                  <div
+                    key={cfg.name}
+                    onClick={() =>
+                      setSelectedConfig(JSON.parse(JSON.stringify(cfg)))
+                    }
+                    className={`group p-3 text-left rounded-xl border text-xs cursor-pointer 
+                      transition-all flex justify-between items-center relative ${
+                        selectedConfig?.name === cfg.name
+                          ? "bg-[#306D29] border-[#306D29] text-white font-bold shadow-sm"
+                          : "bg-[#FBF5DD]/50 border-[#E7E1B1] text-[#0D530E] hover:bg-[#FBF5DD]"
+                      }`}
                   >
-                    {cfg.type}
-                  </span>
-                </button>
-              ))
+                    <button
+                      type="button"
+                      className="flex-1 text-left truncate max-w-[140px] 
+                        cursor-pointer font-mono outline-none flex items-center gap-1.5"
+                    >
+                      {/* radar dot showing live usage status */}
+                      {isCurrentlyInUse && (
+                        <span className="flex h-1.5 w-1.5 flex-shrink-0 relative">
+                          <span
+                            className={`animate-ping absolute inline-flex h-full 
+                              w-full rounded-full opacity-75 ${selectedConfig?.name === cfg.name ? "bg-white" : "bg-emerald-400"}`}
+                          ></span>
+                          <span
+                            className={`relative inline-flex rounded-full h-1.5 w-1.5
+                              ${selectedConfig?.name === cfg.name ? "bg-white" : "bg-emerald-500"}`}
+                          ></span>
+                        </span>
+                      )}
+
+                      <span
+                        className={
+                          isCurrentlyInUse && selectedConfig?.name !== cfg.name
+                            ? "text-[#0D530E]"
+                            : ""
+                        }
+                      >
+                        {cfg.name}
+                      </span>
+                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold 
+                          uppercase tracking-wider ${
+                            selectedConfig?.name === cfg.name
+                              ? "bg-white/20 text-white border border-white/30"
+                              : cfg.type === "secret"
+                                ? "bg-red-600/10 text-red-700 border border-red-600/20"
+                                : "bg-blue-600/10 text-blue-700 border border-blue-600/20"
+                          }`}
+                      >
+                        {cfg.type}
+                      </span>
+
+                      {/* delete action */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation(); // stop selection trigger
+                          if (
+                            confirm(
+                              `Are you sure you want to completely drop "${cfg.name}" from the cluster?`,
+                            )
+                          ) {
+                            handleDeleteConfigBlock(cfg.name, cfg.type);
+                          }
+                        }}
+                        className={`transition-colors cursor-pointer text-[11px] font-bold px-1 ${
+                          selectedConfig?.name === cfg.name
+                            ? "text-white/60 hover:text-white"
+                            : "text-slate-400 hover:text-red-600"
+                        }`}
+                        title="Delete Resource Map"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}

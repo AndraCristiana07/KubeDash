@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -69,6 +70,13 @@ type ConfigResource struct {
 	Name      string            `json:"name"`
 	Namespace string            `json:"namespace"`
 	Data      map[string]string `json:"data"`
+	BoundPods []string          `json:"bound_pods"`
+}
+
+type DeleteConfigRequest struct {
+	ConfigName string `json:"config_name" binding:"required"`
+	ConfigType string `json:"config_type" binding:"required"`
+	Namespace  string `json:"namespace"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -158,6 +166,7 @@ func main() {
 		api.POST("/cluster/config/update", handleUpdateConfiguration)
 		api.POST("/cluster/config/create", handleCreateConfiguration)
 		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
+		api.DELETE("/cluster/config/delete", deleteConfigBlock)
 	}
 
 	// start Server on port 8080
@@ -752,6 +761,7 @@ func handleGetConfigurations(c *gin.Context) {
 				Name:      cm.Name,
 				Namespace: cm.Namespace,
 				Data:      cm.Data,
+				BoundPods: getBoundPods(cm.Namespace, cm.Name, "configmap"),
 			})
 		}
 	}
@@ -775,6 +785,7 @@ func handleGetConfigurations(c *gin.Context) {
 				Name:      sec.Name,
 				Namespace: sec.Namespace,
 				Data:      decodedData,
+				BoundPods: getBoundPods(sec.Namespace, sec.Name, "secret"),
 			})
 		}
 	}
@@ -933,8 +944,23 @@ func addConfigToExistingPod(c *gin.Context) {
 		return
 	}
 
-	// loop through your new mappings and build EnvVar structs
-	var newEnvVars []corev1.EnvVar
+	incomingKeys := make(map[string]bool)
+	for _, mapping := range req.Mappings {
+		if mapping.EnvKey != "" {
+			incomingKeys[mapping.EnvKey] = true
+		}
+	}
+
+	// build slice for Env vars, filtering out old matching keys
+	var cleanEnv []corev1.EnvVar
+	for _, existingVar := range livePod.Spec.Containers[0].Env {
+		// if the existing variable name matches a new one coming in, skip it
+		if !incomingKeys[existingVar.Name] {
+			cleanEnv = append(cleanEnv, existingVar)
+		}
+	}
+
+	// loop through new mappings and build EnvVar structs
 	for _, mapping := range req.Mappings {
 		if mapping.SourceKey == "" || mapping.EnvKey == "" {
 			continue
@@ -957,13 +983,13 @@ func addConfigToExistingPod(c *gin.Context) {
 				},
 			}
 		}
-		newEnvVars = append(newEnvVars, envVar)
+		// append the fresh configuration to our clean base slice
+		cleanEnv = append(cleanEnv, envVar)
 	}
 
-	// append to the existing container env slice without erasing previous configurations
-	livePod.Spec.Containers[0].Env = append(livePod.Spec.Containers[0].Env, newEnvVars...)
+	// rassign the completely clean, deduplicated array back to the container spec
+	livePod.Spec.Containers[0].Env = cleanEnv
 
-	// save vital spec data, clear runtime tracking metadata
 	newPodSpec := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      livePod.Name,
@@ -974,21 +1000,78 @@ func addConfigToExistingPod(c *gin.Context) {
 	}
 
 	// remove the old pod instance
-	gracePeriod := int64(0) // instantly terminate to avoid lockouts
+	gracePeriod := int64(0)
 	err = clientset.CoreV1().Pods(req.Namespace).Delete(context.TODO(), req.PodName, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriod})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed clearing original pod context: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed clearing original pod: " + err.Error()})
 		return
 	}
-
-	// spawn the newly patched spec configuration
+	// wait until pod deleted (6 seconds max)
+	maxWaitAttempts := 30
+	for i := 0; i < maxWaitAttempts; i++ {
+		_, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				break
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// new instance
 	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), newPodSpec, metav1.CreateOptions{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed executing patched spec deploy: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Variables injected successfully, container lifecycle cycled."})
+	c.JSON(http.StatusOK, gin.H{"message": "Variables injected successfully, unique container iteration deployed."})
+}
+
+func deleteConfigBlock(c *gin.Context) {
+	var req DeleteConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deletion payload properties"})
+		return
+	}
+
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+
+	// ensure no running pods are currently depending on the config
+	pods, err := clientset.CoreV1().Pods(req.Namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, pod := range pods.Items {
+			for _, container := range pod.Spec.Containers {
+				for _, env := range container.Env {
+					if env.ValueFrom != nil {
+						if req.ConfigType == "secret" && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == req.ConfigName {
+							c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: %s", pod.Name)})
+							return
+						}
+						if req.ConfigType == "configmap" && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == req.ConfigName {
+							c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: %s", pod.Name)})
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// safe to delete
+	if req.ConfigType == "secret" {
+		err = clientset.CoreV1().Secrets(req.Namespace).Delete(context.TODO(), req.ConfigName, metav1.DeleteOptions{})
+	} else {
+		err = clientset.CoreV1().ConfigMaps(req.Namespace).Delete(context.TODO(), req.ConfigName, metav1.DeleteOptions{})
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed deleting cluster asset: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Resource block '%s' cleared out cleanly from cluster topology.", req.ConfigName)})
 }
 
 func homeDir() string {
@@ -1040,4 +1123,41 @@ func byteContainsIgnoreCase(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// trace which pods are currently pointing to a specific resource block
+func getBoundPods(namespace string, resName string, resType string) []string {
+	var boundPods []string
+
+	// all pods in the target namespace
+	podList, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return []string{} // return empty if lookup fails
+	}
+
+	for _, pod := range podList.Items {
+		isBound := false
+		for _, container := range pod.Spec.Containers {
+			for _, env := range container.Env {
+				if env.ValueFrom != nil {
+					// check Secret bindings
+					if resType == "secret" && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == resName {
+						isBound = true
+					}
+					// check ConfigMap bindings
+					if resType == "configmap" && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == resName {
+						isBound = true
+					}
+				}
+			}
+		}
+		if isBound {
+			boundPods = append(boundPods, pod.Name)
+		}
+	}
+
+	if boundPods == nil {
+		return []string{}
+	}
+	return boundPods
 }
