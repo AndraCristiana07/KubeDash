@@ -68,6 +68,28 @@ export default function LogStreamModal({
     setAutoScroll(isAtBottom);
   };
 
+  const handleDownloadTrigger = () => {
+    if (logs.length === 0) return;
+
+    const logContent = logs.join("\n");
+
+    // create plain-text Blob out of logs
+    const blob = new Blob([logContent], { type: "text/plain;charset=utf-8" });
+
+    // temporary, invisible HTML anchor link element
+    const link = document.createElement("a");
+
+    // local browser URL pointing to that data Blob
+    link.href = URL.createObjectURL(blob);
+    link.download = `${namespace}-${podName}-buffer-dump.log`;
+
+    document.body.appendChild(link);
+    link.click();
+
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  };
+
   const filteredLogs = logs.filter((line) =>
     line.toLowerCase().includes(filterText.toLowerCase()),
   );
@@ -89,7 +111,7 @@ export default function LogStreamModal({
         >
           <div className="flex items-center gap-2.5 min-w-0 sm:flex-initial">
             <span className="font-bold text-sm tracking-tight whitespace-nowrap">
-              Live Container Logs Terminal
+              Live Container Logs
             </span>
 
             <div className="relative group inline-flex items-center">
@@ -116,7 +138,7 @@ export default function LogStreamModal({
                   className="text-[#E7E1B1]/60 text-[10px] font-sans 
                     font-bold uppercase tracking-wider mb-0.5"
                 >
-                  Full Resource Track:
+                  Resource Track:
                 </div>
                 <div className="font-bold tracking-wide select-all selection:bg-[#306D29]">
                   {namespace}/{podName}
@@ -151,16 +173,27 @@ export default function LogStreamModal({
             {/* pause toggle */}
             <button
               onClick={() => setIsPaused(!isPaused)}
-              className={`text-xs font-bold px-3 py-1 rounded-md border min-w-[150px]
+              className={`text-xs font-bold px-3 py-1 rounded-md border min-w-[80px]
                 transition-all cursor-pointer shadow-sm flex items-center gap-1.5 ${
                   isPaused
                     ? "bg-amber-600 text-white border-amber-500 hover:bg-amber-700"
                     : "bg-[#306D29] text-[#E7E1B1] border-[#E7E1B1]/10 hover:text-white hover:bg-[#306D29]/80"
                 }`}
             >
-              {isPaused ? "Resume Stream" : "Pause Stream"}
+              {isPaused ? "Resume" : "Pause"}
             </button>
-
+            {/* download logs  */}
+            <button
+              onClick={handleDownloadTrigger}
+              disabled={logs.length === 0}
+              className={`text-xs font-bold px-3 py-1 rounded-md border transition-all cursor-pointer shadow-sm ${
+                logs.length === 0
+                  ? "bg-[#306D29]/40 text-[#E7E1B1]/30 border-transparent cursor-not-allowed"
+                  : "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700"
+              }`}
+            >
+              Download
+            </button>
             {/* clear logs */}
             <button
               onClick={() => setLogs([])}
@@ -241,7 +274,7 @@ export default function LogStreamModal({
               })
             ) : (
               // TODO: text is too dark or too slim to be seen on black
-              <div className="text-[#306D29]/60 italic py-8 text-center font-bold">
+              <div className="text-[#4E8D49] italic py-8 text-center font-bold">
                 {logs.length === 0
                   ? "Waiting for incoming live infrastructure stream events from core client engine..."
                   : "No logged line chunks match your active string queries."}
