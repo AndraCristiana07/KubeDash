@@ -51,6 +51,14 @@ type PodTableEntry struct {
 	LinkedConfigs []string `json:"linked_configs"`
 }
 
+type AddConfigToPodRequest struct {
+	PodName    string       `json:"pod_name"`
+	Namespace  string       `json:"namespace"`
+	ConfigType string       `json:"config_type"`
+	ConfigName string       `json:"config_name"`
+	Mappings   []EnvMapping `json:"mappings"`
+}
+
 type RestartRequest struct {
 	Namespace string `json:"namespace" binding:"required"`
 	PodName   string `json:"pod_name" binding:"required"`
@@ -149,6 +157,7 @@ func main() {
 		api.GET("/cluster/config", handleGetConfigurations)
 		api.POST("/cluster/config/update", handleUpdateConfiguration)
 		api.POST("/cluster/config/create", handleCreateConfiguration)
+		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
 	}
 
 	// start Server on port 8080
@@ -894,6 +903,92 @@ func handleCreateConfiguration(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Resource block successfully provisioned inside cluster"})
+}
+
+func addConfigToExistingPod(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req AddConfigToPodRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload format"})
+		return
+	}
+
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+
+	// fetch the live pod from the cluster
+	livePod, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Target pod not found: " + err.Error()})
+		return
+	}
+
+	if len(livePod.Spec.Containers) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target pod has no containers"})
+		return
+	}
+
+	// loop through your new mappings and build EnvVar structs
+	var newEnvVars []corev1.EnvVar
+	for _, mapping := range req.Mappings {
+		if mapping.SourceKey == "" || mapping.EnvKey == "" {
+			continue
+		}
+
+		envVar := corev1.EnvVar{Name: mapping.EnvKey}
+
+		if req.ConfigType == "secret" {
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  mapping.SourceKey,
+				},
+			}
+		} else {
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  mapping.SourceKey,
+				},
+			}
+		}
+		newEnvVars = append(newEnvVars, envVar)
+	}
+
+	// append to the existing container env slice without erasing previous configurations
+	livePod.Spec.Containers[0].Env = append(livePod.Spec.Containers[0].Env, newEnvVars...)
+
+	// save vital spec data, clear runtime tracking metadata
+	newPodSpec := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      livePod.Name,
+			Namespace: livePod.Namespace,
+			Labels:    livePod.Labels,
+		},
+		Spec: livePod.Spec,
+	}
+
+	// remove the old pod instance
+	gracePeriod := int64(0) // instantly terminate to avoid lockouts
+	err = clientset.CoreV1().Pods(req.Namespace).Delete(context.TODO(), req.PodName, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriod})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed clearing original pod context: " + err.Error()})
+		return
+	}
+
+	// spawn the newly patched spec configuration
+	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), newPodSpec, metav1.CreateOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed executing patched spec deploy: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Variables injected successfully, container lifecycle cycled."})
 }
 
 func homeDir() string {
