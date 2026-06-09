@@ -5,11 +5,14 @@ import (
 	"backend/controllers"
 	"backend/models"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +30,8 @@ import (
 
 // ref for Kubernetes client for routes
 var clientset *kubernetes.Clientset
+
+// var metricsClientset *metricsv.Clientset
 var k8sConfig *rest.Config
 
 type EnvMapping struct {
@@ -50,6 +55,31 @@ type PodTableEntry struct {
 	Image         string   `json:"image"`
 	Ageseconds    int      `json:"age_seconds"`
 	LinkedConfigs []string `json:"linked_configs"`
+}
+
+type PodResourceMetrics struct {
+	PodName   string `json:"pod_name"`
+	Namespace string `json:"namespace"`
+	CPUUsage  int64  `json:"cpu_usage"`
+	MemUsage  int64  `json:"mem_usage"`
+	GPUUsage  int64  `json:"gpu_usage"`
+	Type      string `json:"type"`
+}
+
+type RawK8sMetricsList struct {
+	Items []struct {
+		Metadata struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Containers []struct {
+			Name  string `json:"name"`
+			Usage struct {
+				CPU    string `json:"cpu"`
+				Memory string `json:"memory"`
+			} `json:"usage"`
+		} `json:"containers"`
+	} `json:"items"`
 }
 
 type AddConfigToPodRequest struct {
@@ -131,6 +161,7 @@ func main() {
 	watchPods()
 	fmt.Println("Scanning Kubernetes...")
 	go watchEventsInBackground()
+	go broadcastMetricsInBackground()
 
 	// setup Gin Router
 	r := gin.Default()
@@ -1074,6 +1105,133 @@ func deleteConfigBlock(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Resource block '%s' cleared out cleanly from cluster topology.", req.ConfigName)})
 }
 
+func broadcastMetricsInBackground() {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	transport, err := rest.TransportFor(k8sConfig)
+	if err != nil {
+		log.Printf("⚠️ Failed to create metrics transport: %v\n", err)
+		return
+	}
+
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   5 * time.Second,
+	}
+
+	// make target metrics URL string
+	metricsURL := fmt.Sprintf("%s/apis/metrics.k8s.io/v1beta1/pods", strings.TrimSuffix(k8sConfig.Host, "/"))
+
+	fmt.Println("Real-time infrastructure metrics engine is now LIVE!")
+
+	for range ticker.C {
+		notificationMutex.Lock()
+		activeClients := len(notificationClients)
+		notificationMutex.Unlock()
+
+		if activeClients == 0 {
+			continue
+		}
+
+		// query the metrics endpoint using http client
+		resp, err := httpClient.Get(metricsURL)
+		if err != nil {
+			log.Printf("⚠️ Metrics Server Connection Failure: %v\n", err)
+			continue
+		}
+
+		rawBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			log.Printf("⚠️ Failed to read metrics response body: %v\n", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("⚠️ Metrics Server returned HTTP %d: %s\n", resp.StatusCode, string(rawBytes))
+			continue
+		}
+
+		var metricsList RawK8sMetricsList
+		if err := json.Unmarshal(rawBytes, &metricsList); err != nil {
+			log.Printf("⚠️ JSON Parsing Failure: %v\n", err)
+			continue
+		}
+
+		log.Printf("Processing telemetry fields for %d target cluster pods...\n", len(metricsList.Items))
+
+		for _, item := range metricsList.Items {
+			var totalCPU int64
+			var totalMem int64
+
+			for _, c := range item.Containers {
+				cpuStr := c.Usage.CPU
+				if len(cpuStr) > 0 {
+					if strings.HasSuffix(cpuStr, "m") {
+						var millicores int64
+						fmt.Sscanf(cpuStr, "%dm", &millicores)
+						totalCPU += millicores
+					} else if strings.HasSuffix(cpuStr, "n") {
+						var nanocores int64
+						fmt.Sscanf(cpuStr, "%dn", &nanocores)
+						if nanocores > 0 && nanocores < 1000000 {
+							totalCPU += 1 // round up to 1
+						} else {
+							totalCPU += nanocores / 1000000
+						}
+					}
+				}
+
+				memStr := c.Usage.Memory
+				if len(memStr) > 0 {
+					var rawAmount int64
+					fmt.Sscanf(memStr, "%d", &rawAmount)
+					if strings.HasSuffix(memStr, "Ki") {
+						totalMem += rawAmount / 1024
+					} else if strings.HasSuffix(memStr, "Mi") {
+						totalMem += rawAmount
+					} else if strings.HasSuffix(memStr, "Gi") {
+						totalMem += rawAmount * 1024
+					} else {
+						var rawCores int64
+						if _, err := fmt.Sscanf(cpuStr, "%d", &rawCores); err == nil {
+							totalCPU += rawCores * 1000 // cnvert full cores to millicores
+						}
+					}
+				}
+			}
+
+			payload := PodResourceMetrics{
+				PodName:   item.Metadata.Name,
+				Namespace: item.Metadata.Namespace,
+				CPUUsage:  totalCPU,
+				MemUsage:  totalMem,
+				GPUUsage:  0,
+				Type:      "metrics_telemetry",
+			}
+
+			log.Printf("Streaming: Pod=%s CPU=%dm Mem=%dMB\n", payload.PodName, payload.CPUUsage, payload.MemUsage)
+
+			envelope := map[string]interface{}{
+				"type": "metrics_telemetry",
+				"data": payload,
+			}
+
+			notificationMutex.Lock()
+			for client := range notificationClients {
+				err := client.WriteJSON(envelope)
+				if err != nil {
+					client.Close()
+					delete(notificationClients, client)
+				}
+			}
+			notificationMutex.Unlock()
+		}
+	}
+}
+
 func homeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -1160,4 +1318,41 @@ func getBoundPods(namespace string, resName string, resType string) []string {
 		return []string{}
 	}
 	return boundPods
+}
+
+func parseDCGMMetrics(nodeIP string) (int64, int64) {
+	resp, err := http.Get(fmt.Sprintf("http://%s:9400/metrics", nodeIP))
+	if err != nil {
+		return 0, 0
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, 0
+	}
+
+	var gpuUtil int64
+	var fbUsed int64
+
+	lines := strings.Split(string(body), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "DCGM_FI_DEV_GPU_UTIL") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 {
+				if val, err := strconv.ParseFloat(fields[1], 64); err == nil {
+					gpuUtil = int64(val)
+				}
+			}
+		}
+		if strings.HasPrefix(line, "DCGM_FI_DEV_FB_USED") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 {
+				if val, err := strconv.ParseFloat(fields[1], 64); err == nil {
+					fbUsed = int64(val)
+				}
+			}
+		}
+	}
+	return gpuUtil, fbUsed
 }
