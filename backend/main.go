@@ -39,11 +39,12 @@ type DeployPodRequest struct {
 }
 
 type PodTableEntry struct {
-	Name       string `json:"name"`
-	Namespace  string `json:"namespace"`
-	Status     string `json:"status"`
-	Image      string `json:"image"`
-	Ageseconds int    `json:"age_seconds"`
+	Name          string   `json:"name"`
+	Namespace     string   `json:"namespace"`
+	Status        string   `json:"status"`
+	Image         string   `json:"image"`
+	Ageseconds    int      `json:"age_seconds"`
+	LinkedConfigs []string `json:"linked_configs"`
 }
 
 type RestartRequest struct {
@@ -395,13 +396,42 @@ func getClusterPods(c *gin.Context) {
 		if len(pod.Status.ContainerStatuses) > 0 {
 			image = pod.Status.ContainerStatuses[0].Image
 		}
+
+		var linkedConfigs []string
+		seenConfigs := make(map[string]bool)
+
+		// loop over containers
+		for _, container := range pod.Spec.Containers {
+			for _, env := range container.Env {
+				if env.ValueFrom != nil {
+					// check for Secret
+					if env.ValueFrom.SecretKeyRef != nil {
+						cfgName := "secret:" + env.ValueFrom.SecretKeyRef.Name
+						if !seenConfigs[cfgName] {
+							seenConfigs[cfgName] = true
+							linkedConfigs = append(linkedConfigs, cfgName)
+						}
+					}
+					// check for ConfigMap
+					if env.ValueFrom.ConfigMapKeyRef != nil {
+						cfgName := "cm:" + env.ValueFrom.ConfigMapKeyRef.Name
+						if !seenConfigs[cfgName] {
+							seenConfigs[cfgName] = true
+							linkedConfigs = append(linkedConfigs, cfgName)
+						}
+					}
+				}
+			}
+		}
+
 		podList = append(podList,
 			PodTableEntry{
-				Name:       pod.Name,
-				Namespace:  pod.Namespace,
-				Status:     string(pod.Status.Phase),
-				Image:      image,
-				Ageseconds: int(time.Since(pod.CreationTimestamp.Time).Seconds()),
+				Name:          pod.Name,
+				Namespace:     pod.Namespace,
+				Status:        string(pod.Status.Phase),
+				Image:         image,
+				Ageseconds:    int(time.Since(pod.CreationTimestamp.Time).Seconds()),
+				LinkedConfigs: linkedConfigs,
 			})
 	}
 	c.JSON(http.StatusOK, gin.H{

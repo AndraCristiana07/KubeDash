@@ -20,6 +20,7 @@ interface PodEntry {
   status: string;
   image: string;
   age_seconds: number;
+  linked_configs: string[];
 }
 
 const GO_API =
@@ -62,6 +63,18 @@ export default function App() {
   const [attachSourceKey, setAttachSourceKey] = useState("");
 
   const [configs, setConfigs] = useState<any[]>([]);
+
+  //for config object
+  const [quickViewConfig, setQuickViewConfig] = useState<{
+    type: string;
+    name: string;
+    namespace: string;
+  } | null>(null);
+  const [quickViewData, setQuickViewData] = useState<Record<
+    string,
+    string
+  > | null>(null);
+  const [isLoadingQuickView, setIsLoadingQuickView] = useState(false);
 
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
@@ -387,6 +400,46 @@ export default function App() {
       console.error("Network request failed:", err);
     } finally {
       setIsRestarting(null);
+    }
+  };
+
+  const handleConfigBadgeClick = async (
+    type: string,
+    name: string,
+    namespace: string,
+  ) => {
+    setQuickViewConfig({ type, name, namespace });
+    setQuickViewData(null);
+    setIsLoadingQuickView(true);
+
+    try {
+      // query config api route
+      const res = await fetch(
+        `${GO_API}/api/cluster/config?namespace=${namespace}`,
+      );
+      if (res.ok) {
+        const allConfigs = await res.json();
+        // get matching object
+        const match = allConfigs.find(
+          (c: any) => c.name === name && c.type === type,
+        );
+        setQuickViewData(
+          match?.data || {
+            STATUS: "No keys found inside this resource block.",
+          },
+        );
+      } else {
+        setQuickViewData({
+          ERROR: "Failed to look up cluster resource values.",
+        });
+      }
+    } catch (err) {
+      console.error("Quick view lookup fault:", err);
+      setQuickViewData({
+        ERROR: "Network execution fault tracking variable keys.",
+      });
+    } finally {
+      setIsLoadingQuickView(false);
     }
   };
 
@@ -801,8 +854,62 @@ export default function App() {
                                 {pod.status}
                               </span>
                             </td>
-                            <td className="p-4 text-[#306D29] font-medium truncate max-w-[180px]">
-                              {pod.image}
+                            <td className="p-4 text-[#306D29] font-medium max-w-[200px]">
+                              <div
+                                className="truncate font-bold"
+                                title={pod.image}
+                              >
+                                {pod.image}
+                              </div>
+
+                              {pod.linked_configs &&
+                                pod.linked_configs.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                                    {pod.linked_configs.map(
+                                      (configStr: string, idx: number) => {
+                                        const isSecret =
+                                          configStr.startsWith("secret:");
+                                        const typeLabel = isSecret
+                                          ? "secret"
+                                          : "configmap";
+                                        const cleanName = configStr.replace(
+                                          /^(secret:|cm:)/,
+                                          "",
+                                        );
+
+                                        return (
+                                          <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() =>
+                                              handleConfigBadgeClick(
+                                                typeLabel,
+                                                cleanName,
+                                                pod.namespace,
+                                              )
+                                            }
+                                            title={`Click to preview keys inside ${cleanName}`}
+                                            className={`text-[9px] px-1.5 py-0.5 rounded-md 
+                                              font-sans font-bold flex items-center gap-1 tracking-wide 
+                                              shadow-2xs border transition-all transform 
+                                              hover:scale-105 active:scale-95 cursor-pointer ${
+                                                isSecret
+                                                  ? "bg-red-500/10 text-red-800 border-red-500/20 hover:bg-red-500/20"
+                                                  : "bg-blue-500/10 text-blue-800 border-blue-500/20 hover:bg-blue-500/20"
+                                              }`}
+                                          >
+                                            <span>
+                                              {isSecret ? "🔒" : "⚙️"}
+                                            </span>
+                                            <span className="truncate max-w-[100px]">
+                                              {cleanName}
+                                            </span>
+                                          </button>
+                                        );
+                                      },
+                                    )}
+                                  </div>
+                                )}
                             </td>
                             <td className="p-4 text-center text-slate-500 font-medium">
                               {formatPodAge(pod.age_seconds)}
@@ -812,9 +919,9 @@ export default function App() {
                                 <button
                                   onClick={() => setLogPod(pod)}
                                   className="px-2 py-1 text-[10px] font-bold 
-                                text-amber-800 hover:text-white bg-amber-500/10 
-                                hover:bg-amber-600 border border-amber-500/20 
-                                rounded-md transition-all cursor-pointer"
+                                    text-amber-800 hover:text-white bg-amber-500/10 
+                                    hover:bg-amber-600 border border-amber-500/20 
+                                    rounded-md transition-all cursor-pointer"
                                 >
                                   Logs
                                 </button>
@@ -922,6 +1029,7 @@ export default function App() {
       </main>
 
       {/* modal for deploying */}
+      {/* TODO: make multiple keys setting possible */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center 
@@ -1137,6 +1245,85 @@ export default function App() {
           namespace={logPod.namespace}
           onClose={() => setLogPod(null)}
         />
+      )}
+      {quickViewConfig && (
+        <div
+          className="fixed inset-0 z-50 flex items-center 
+            justify-center bg-black/40 backdrop-blur-xs animate-fade-in"
+        >
+          <div
+            className="bg-[#FBF5DD] border border-[#E7E1B1] w-full 
+              max-w-sm rounded-xl p-5 shadow-2xl space-y-3 font-mono"
+          >
+            <div
+              className="flex justify-between items-start 
+                border-b border-[#E7E1B1]/60 pb-2"
+            >
+              <div>
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                  Resource Quick-Peek ({quickViewConfig.namespace})
+                </div>
+                <h3 className="text-sm font-black text-[#0D530E] flex items-center gap-1.5 mt-0.5">
+                  <span>{quickViewConfig.type === "secret" ? "🔒" : "⚙️"}</span>
+                  <span>{quickViewConfig.name}</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => setQuickViewConfig(null)}
+                className="text-slate-400 hover:text-red-700 font-bold 
+                  transition-colors text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* config content */}
+            <div
+              className="bg-white border border-[#E7E1B1] rounded-lg p-3 
+                text-[11px] max-h-48 overflow-y-auto space-y-2"
+            >
+              {isLoadingQuickView ? (
+                <div className="text-slate-400 italic py-4 text-center">
+                  Querying cluster configurations...
+                </div>
+              ) : quickViewData ? (
+                Object.entries(quickViewData).map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="border-b border-[#E7E1B1]/20 pb-1.5 last:border-0 last:pb-0"
+                  >
+                    <span className="text-[#306D29] font-bold block">
+                      {key}:
+                    </span>
+                    <span
+                      className="text-slate-600 font-medium break-all 
+                        block pl-2 bg-slate-50/50 rounded mt-0.5 py-0.5 px-1"
+                    >
+                      {quickViewConfig.type === "secret"
+                        ? "•••••••• (Encrypted Secret)"
+                        : value}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-red-600 italic py-2 text-center">
+                  No data found or mapping dropped.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                onClick={() => setQuickViewConfig(null)}
+                className="px-3 py-1 text-[10px] font-bold bg-[#E7E1B1] 
+                  hover:bg-[#E7E1B1]/60 text-[#0D530E] rounded-md 
+                  transition-all cursor-pointer"
+              >
+                Close Panel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <Toaster position="top-right" reverseOrder={false} />
     </div>

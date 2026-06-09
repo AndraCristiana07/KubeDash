@@ -59,6 +59,7 @@ Can now add pods from frontend:
 ## Pods Table
 
 Here you can see all pods (depending on chosen namespace) with pod name, namespace, status, image, age (since when it's active) and actions.
+Below the container name, there are badges if the pod has a ConfigMap or a Secret set. These are clickable to see the information about them.
 
 Actions:
 
