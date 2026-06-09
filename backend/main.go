@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -27,22 +29,54 @@ import (
 var clientset *kubernetes.Clientset
 var k8sConfig *rest.Config
 
+type EnvMapping struct {
+	SourceKey string `json:"source_key"` // key inside ConfigMap/Secret
+	EnvKey    string `json:"env_key"`    // name inside pod container
+}
+
 type DeployPodRequest struct {
-	PodName string `json:"pod_name" binding:"required"`
-	Image   string `json:"image" binding:"required"`
+	PodName    string       `json:"pod_name"`
+	Image      string       `json:"image"`
+	Namespace  string       `json:"namespace"`
+	ConfigType string       `json:"config_type"`
+	ConfigName string       `json:"config_name"`
+	Mappings   []EnvMapping `json:"mappings"`
 }
 
 type PodTableEntry struct {
-	Name       string `json:"name"`
-	Namespace  string `json:"namespace"`
-	Status     string `json:"status"`
-	Image      string `json:"image"`
-	Ageseconds int    `json:"age_seconds"`
+	Name          string   `json:"name"`
+	Namespace     string   `json:"namespace"`
+	Status        string   `json:"status"`
+	Image         string   `json:"image"`
+	Ageseconds    int      `json:"age_seconds"`
+	LinkedConfigs []string `json:"linked_configs"`
+}
+
+type AddConfigToPodRequest struct {
+	PodName    string       `json:"pod_name"`
+	Namespace  string       `json:"namespace"`
+	ConfigType string       `json:"config_type"`
+	ConfigName string       `json:"config_name"`
+	Mappings   []EnvMapping `json:"mappings"`
 }
 
 type RestartRequest struct {
 	Namespace string `json:"namespace" binding:"required"`
 	PodName   string `json:"pod_name" binding:"required"`
+}
+
+type ConfigResource struct {
+	Type      string            `json:"type"` // "configmap" or "secret"
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	Data      map[string]string `json:"data"`
+	BoundPods []string          `json:"bound_pods"`
+}
+
+type DeleteConfigRequest struct {
+	ConfigName string `json:"config_name" binding:"required"`
+	ConfigType string `json:"config_type" binding:"required"`
+	Namespace  string `json:"namespace"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -128,6 +162,11 @@ func main() {
 		api.GET("/cluster/logs/stream", handlePodLogStream)
 		api.GET("/cluster/notifications", handleNotificationStream)
 		api.POST("/cluster/restart", handleRestartDeployment)
+		api.GET("/cluster/config", handleGetConfigurations)
+		api.POST("/cluster/config/update", handleUpdateConfiguration)
+		api.POST("/cluster/config/create", handleCreateConfiguration)
+		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
+		api.DELETE("/cluster/config/delete", deleteConfigBlock)
 	}
 
 	// start Server on port 8080
@@ -281,34 +320,69 @@ func deployNewPod(c *gin.Context) {
 	}
 
 	var req DeployPodRequest
+
 	// parse incoming payload from frontend
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input variables"})
 		return
 	}
+	// if empty -> default
+	if req.Namespace == "" || req.Namespace == "all" {
+		req.Namespace = "default"
+	}
 
+	// base structural container
+	container := corev1.Container{
+		Name:  "app-container",
+		Image: req.Image,
+	}
+
+	if req.ConfigName != "" && len(req.Mappings) > 0 {
+		for _, mapping := range req.Mappings {
+			if mapping.SourceKey == "" || mapping.EnvKey == "" {
+				continue
+			}
+
+			envVar := corev1.EnvVar{
+				Name: mapping.EnvKey,
+			}
+
+			switch req.ConfigType {
+			case "secret":
+				envVar.ValueFrom = &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+						Key:                  mapping.SourceKey, // target source key
+					},
+				}
+			case "configmap":
+				envVar.ValueFrom = &corev1.EnvVarSource{
+					ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+						Key:                  mapping.SourceKey,
+					},
+				}
+			}
+
+			container.Env = append(container.Env, envVar)
+		}
+	}
 	// manifest engine definitions for client-go
 	podManifest := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.PodName,
-			Namespace: "default",
+			Namespace: req.Namespace,
 			Labels: map[string]string{
 				"deployed-by": "kubedash-engine",
 			},
 		},
 		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:            req.PodName + "-container",
-					Image:           req.Image,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-				},
-			},
+			Containers: []corev1.Container{container},
 		},
 	}
 
 	// exec payload delivery to active cluster context
-	_, err := clientset.CoreV1().Pods("default").Create(context.TODO(), podManifest, metav1.CreateOptions{})
+	_, err := clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), podManifest, metav1.CreateOptions{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -343,13 +417,42 @@ func getClusterPods(c *gin.Context) {
 		if len(pod.Status.ContainerStatuses) > 0 {
 			image = pod.Status.ContainerStatuses[0].Image
 		}
+
+		var linkedConfigs []string
+		seenConfigs := make(map[string]bool)
+
+		// loop over containers
+		for _, container := range pod.Spec.Containers {
+			for _, env := range container.Env {
+				if env.ValueFrom != nil {
+					// check for Secret
+					if env.ValueFrom.SecretKeyRef != nil {
+						cfgName := "secret:" + env.ValueFrom.SecretKeyRef.Name
+						if !seenConfigs[cfgName] {
+							seenConfigs[cfgName] = true
+							linkedConfigs = append(linkedConfigs, cfgName)
+						}
+					}
+					// check for ConfigMap
+					if env.ValueFrom.ConfigMapKeyRef != nil {
+						cfgName := "cm:" + env.ValueFrom.ConfigMapKeyRef.Name
+						if !seenConfigs[cfgName] {
+							seenConfigs[cfgName] = true
+							linkedConfigs = append(linkedConfigs, cfgName)
+						}
+					}
+				}
+			}
+		}
+
 		podList = append(podList,
 			PodTableEntry{
-				Name:       pod.Name,
-				Namespace:  pod.Namespace,
-				Status:     string(pod.Status.Phase),
-				Image:      image,
-				Ageseconds: int(time.Since(pod.CreationTimestamp.Time).Seconds()),
+				Name:          pod.Name,
+				Namespace:     pod.Namespace,
+				Status:        string(pod.Status.Phase),
+				Image:         image,
+				Ageseconds:    int(time.Since(pod.CreationTimestamp.Time).Seconds()),
+				LinkedConfigs: linkedConfigs,
 			})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -631,6 +734,346 @@ func handleRestartDeployment(c *gin.Context) {
 	})
 }
 
+// list all ConfigMaps and Secrets inside a namespace
+func handleGetConfigurations(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	namespace := c.DefaultQuery("namespace", "default")
+	if namespace == "all" || namespace == "*" || namespace == "" {
+		namespace = ""
+	}
+	var resources []ConfigResource
+
+	// fetch ConfigMaps
+	cms, err := clientset.CoreV1().ConfigMaps(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, cm := range cms.Items {
+			// ignore system generated internal configuration resources
+			if cm.Name == "kube-root-ca.crt" {
+				continue
+			}
+
+			resources = append(resources, ConfigResource{
+				Type:      "configmap",
+				Name:      cm.Name,
+				Namespace: cm.Namespace,
+				Data:      cm.Data,
+				BoundPods: getBoundPods(cm.Namespace, cm.Name, "configmap"),
+			})
+		}
+	}
+
+	// fetch secrets
+	secs, err := clientset.CoreV1().Secrets(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, sec := range secs.Items {
+			if sec.Type == corev1.SecretTypeServiceAccountToken || sec.Type == corev1.SecretTypeBootstrapToken {
+				continue
+			}
+
+			// translate byte arrays in text strings
+			decodedData := make(map[string]string)
+			for k, v := range sec.Data {
+				decodedData[k] = string(v)
+			}
+
+			resources = append(resources, ConfigResource{
+				Type:      "secret",
+				Name:      sec.Name,
+				Namespace: sec.Namespace,
+				Data:      decodedData,
+				BoundPods: getBoundPods(sec.Namespace, sec.Name, "secret"),
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, resources)
+}
+
+// save modified configuration to the cluster context
+func handleUpdateConfiguration(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req ConfigResource
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload schema: " + err.Error()})
+		return
+	}
+
+	switch req.Type {
+	case "configmap":
+		// fetch original item
+		cm, err := clientset.CoreV1().ConfigMaps(req.Namespace).Get(context.TODO(), req.Name, metav1.GetOptions{})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ConfigMap not found: " + err.Error()})
+			return
+		}
+		cm.Data = req.Data
+		_, err = clientset.CoreV1().ConfigMaps(req.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "secret":
+		sec, err := clientset.CoreV1().Secrets(req.Namespace).Get(context.TODO(), req.Name, metav1.GetOptions{})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Secret not found: " + err.Error()})
+			return
+		}
+
+		// eeencode plain text back into binary
+		encodedData := make(map[string][]byte)
+		for k, v := range req.Data {
+			encodedData[k] = []byte(v)
+		}
+		sec.Data = encodedData
+
+		_, err = clientset.CoreV1().Secrets(req.Namespace).Update(context.TODO(), sec, metav1.UpdateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported resource engine type"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Configuration object securely synchronized with cluster state"})
+}
+
+// create new ConfigMaps and Secrets
+func handleCreateConfiguration(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req ConfigResource
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+
+	if req.Name == "" || req.Namespace == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name and Namespace scopes are required properties"})
+		return
+	}
+
+	// fallback context validation logic
+	req.Namespace = strings.TrimSpace(strings.ToLower(req.Namespace))
+	if req.Namespace == "" || req.Namespace == "all" {
+		req.Namespace = "default"
+	}
+	switch req.Type {
+	case "configmap":
+		newCm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name,
+				Namespace: req.Namespace,
+			},
+			Data: req.Data,
+		}
+		if newCm.Data == nil {
+			newCm.Data = make(map[string]string)
+		}
+
+		_, err := clientset.CoreV1().ConfigMaps(req.Namespace).Create(context.TODO(), newCm, metav1.CreateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "secret":
+		newSec := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name,
+				Namespace: req.Namespace,
+			},
+			Type: corev1.SecretTypeOpaque, // key-value secret type
+			Data: make(map[string][]byte),
+		}
+
+		// loop and convert plain-text fields into standard byte streams
+		for k, v := range req.Data {
+			newSec.Data[k] = []byte(v)
+		}
+
+		_, err := clientset.CoreV1().Secrets(req.Namespace).Create(context.TODO(), newSec, metav1.CreateOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported configuration type"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Resource block successfully provisioned inside cluster"})
+}
+
+func addConfigToExistingPod(c *gin.Context) {
+	if clientset == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
+		return
+	}
+
+	var req AddConfigToPodRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload format"})
+		return
+	}
+
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+
+	// fetch the live pod from the cluster
+	livePod, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Target pod not found: " + err.Error()})
+		return
+	}
+
+	if len(livePod.Spec.Containers) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target pod has no containers"})
+		return
+	}
+
+	incomingKeys := make(map[string]bool)
+	for _, mapping := range req.Mappings {
+		if mapping.EnvKey != "" {
+			incomingKeys[mapping.EnvKey] = true
+		}
+	}
+
+	// build slice for Env vars, filtering out old matching keys
+	var cleanEnv []corev1.EnvVar
+	for _, existingVar := range livePod.Spec.Containers[0].Env {
+		// if the existing variable name matches a new one coming in, skip it
+		if !incomingKeys[existingVar.Name] {
+			cleanEnv = append(cleanEnv, existingVar)
+		}
+	}
+
+	// loop through new mappings and build EnvVar structs
+	for _, mapping := range req.Mappings {
+		if mapping.SourceKey == "" || mapping.EnvKey == "" {
+			continue
+		}
+
+		envVar := corev1.EnvVar{Name: mapping.EnvKey}
+
+		if req.ConfigType == "secret" {
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  mapping.SourceKey,
+				},
+			}
+		} else {
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  mapping.SourceKey,
+				},
+			}
+		}
+		// append the fresh configuration to our clean base slice
+		cleanEnv = append(cleanEnv, envVar)
+	}
+
+	// rassign the completely clean, deduplicated array back to the container spec
+	livePod.Spec.Containers[0].Env = cleanEnv
+
+	newPodSpec := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      livePod.Name,
+			Namespace: livePod.Namespace,
+			Labels:    livePod.Labels,
+		},
+		Spec: livePod.Spec,
+	}
+
+	// remove the old pod instance
+	gracePeriod := int64(0)
+	err = clientset.CoreV1().Pods(req.Namespace).Delete(context.TODO(), req.PodName, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriod})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed clearing original pod: " + err.Error()})
+		return
+	}
+	// wait until pod deleted (6 seconds max)
+	maxWaitAttempts := 30
+	for i := 0; i < maxWaitAttempts; i++ {
+		_, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				break
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// new instance
+	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), newPodSpec, metav1.CreateOptions{})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed executing patched spec deploy: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Variables injected successfully, unique container iteration deployed."})
+}
+
+func deleteConfigBlock(c *gin.Context) {
+	var req DeleteConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid deletion payload properties"})
+		return
+	}
+
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+
+	// ensure no running pods are currently depending on the config
+	pods, err := clientset.CoreV1().Pods(req.Namespace).List(context.TODO(), metav1.ListOptions{})
+	if err == nil {
+		for _, pod := range pods.Items {
+			for _, container := range pod.Spec.Containers {
+				for _, env := range container.Env {
+					if env.ValueFrom != nil {
+						if req.ConfigType == "secret" && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == req.ConfigName {
+							c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: %s", pod.Name)})
+							return
+						}
+						if req.ConfigType == "configmap" && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == req.ConfigName {
+							c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: %s", pod.Name)})
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// safe to delete
+	if req.ConfigType == "secret" {
+		err = clientset.CoreV1().Secrets(req.Namespace).Delete(context.TODO(), req.ConfigName, metav1.DeleteOptions{})
+	} else {
+		err = clientset.CoreV1().ConfigMaps(req.Namespace).Delete(context.TODO(), req.ConfigName, metav1.DeleteOptions{})
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed deleting cluster asset: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Resource block '%s' cleared out cleanly from cluster topology.", req.ConfigName)})
+}
+
 func homeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -680,4 +1123,41 @@ func byteContainsIgnoreCase(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// trace which pods are currently pointing to a specific resource block
+func getBoundPods(namespace string, resName string, resType string) []string {
+	var boundPods []string
+
+	// all pods in the target namespace
+	podList, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return []string{} // return empty if lookup fails
+	}
+
+	for _, pod := range podList.Items {
+		isBound := false
+		for _, container := range pod.Spec.Containers {
+			for _, env := range container.Env {
+				if env.ValueFrom != nil {
+					// check Secret bindings
+					if resType == "secret" && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == resName {
+						isBound = true
+					}
+					// check ConfigMap bindings
+					if resType == "configmap" && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == resName {
+						isBound = true
+					}
+				}
+			}
+		}
+		if isBound {
+			boundPods = append(boundPods, pod.Name)
+		}
+	}
+
+	if boundPods == nil {
+		return []string{}
+	}
+	return boundPods
 }

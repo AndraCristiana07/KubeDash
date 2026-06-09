@@ -38,10 +38,28 @@ Can now add pods from frontend:
 
 - Set interval for logs fetching
 - Set namespace
+- Setting ConfigMaps and Secrets
+  - For creating a new one, click on the "New Block" button
+  - It will automatically choose the namespace you are in right now, unless you are in "all", when you will need to type a namespace
+  - First of all, you need to choose if you want to make a ConfigMap or a Secret
+  - Let's say you want to create a new Secret. An example would be
+
+  ```sh
+    RESOURCE NAME: postgres-credentials
+    INITIAL KEY PROPERTY: DB_PASSWORD
+    PROPERTY PLAIN-TEXT VALUE: superPassword
+  ```
+
+  - After clicking "Create New Secret Object" it will automatically be added to the live edit matrix for ConfigMaps and Secrets
+  - You can also add a new row of key-value if you need more arguments and also delete ones when there's more than one row
+
+- Editing ConfigMaps and Secrets
+  - Here you can edit existing ones by choosing one and modifying the fields
 
 ## Pods Table
 
 Here you can see all pods (depending on chosen namespace) with pod name, namespace, status, image, age (since when it's active) and actions.
+Below the container name, there are badges if the pod has a ConfigMap or a Secret set. These are clickable to see the information about them.
 
 Actions:
 
