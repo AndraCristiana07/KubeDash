@@ -56,6 +56,13 @@ export default function App() {
   const [logPod, setLogPod] = useState<PodEntry | null>(null);
   const [isRestarting, setIsRestarting] = useState<string | null>(null);
 
+  const [attachConfigType, setAttachConfigType] = useState("");
+  const [attachConfigName, setAttachConfigName] = useState("");
+  const [attachEnvVarKey, setAttachEnvVarKey] = useState("");
+  const [attachSourceKey, setAttachSourceKey] = useState("");
+
+  const [configs, setConfigs] = useState<any[]>([]);
+
   const formatPodAge = (totalSeconds: number): string => {
     if (totalSeconds < 1) return "0s";
 
@@ -121,6 +128,29 @@ export default function App() {
       console.error("Failed fetching pods list:", err);
     }
   };
+
+  const fetchClusterConfigsForDeployment = async () => {
+    try {
+      const res = await fetch(
+        `${GO_API}/api/cluster/config?namespace=${targetNamespace}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setConfigs(data || []);
+      }
+    } catch (err) {
+      console.error(
+        "Failed fetching config maps & secrets for deployment dropdown:",
+        err,
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (isModalOpen) {
+      fetchClusterConfigsForDeployment();
+    }
+  }, [isModalOpen, targetNamespace, GO_API]);
 
   const handleDeletePod = async (namespace: string, name: string) => {
     if (!window.confirm(`Are you sure you want to terminate pod "${name}"?`))
@@ -259,7 +289,7 @@ export default function App() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  const handleDeployPod = async (e: React.SubmitEvent<HTMLFormElement>) => {
+  const handleDeployPod = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newPodName || !newPodImage) return;
 
@@ -271,13 +301,23 @@ export default function App() {
         body: JSON.stringify({
           pod_name: newPodName.trim(),
           image: newPodImage.trim(),
+          namespace: targetNamespace || "default",
+          config_type: attachConfigType,
+          config_name: attachConfigName,
+          env_key: attachEnvVarKey, // what the code expects
+          source_key: attachSourceKey, // the key inside the config
         }),
       });
 
       if (res.ok) {
+        // clear states
         setIsModalOpen(false);
         setNewPodName("");
         setNewPodImage("");
+        setAttachConfigName("");
+        setAttachConfigType("");
+        setAttachEnvVarKey("");
+        setAttachSourceKey("");
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errorText = await res.text();
@@ -320,7 +360,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           namespace: namespace,
-          pod_name: podName, // raw pod name
+          pod_name: podName,
         }),
       });
 
@@ -458,52 +498,65 @@ export default function App() {
   }, [refreshInterval, targetNamespace]);
 
   return (
-    <div className="flex h-screen w-screen bg-[#FBF5DD] font-sans text-slate-800 overflow-hidden">
+    <div
+      className="flex h-screen w-screen bg-[#FBF5DD] font-sans 
+        text-slate-800 overflow-hidden"
+    >
       {/* left sidebar */}
-      <aside className="w-56 bg-[#0D530E] border-r border-[#306D29]/20 p-4 flex flex-col justify-between shrink-0 shadow-xl">
+      <aside
+        className="w-56 bg-[#0D530E] border-r border-[#306D29]/20 p-4 flex 
+          flex-col justify-between shrink-0 shadow-xl"
+      >
         <div className="space-y-6">
-          <div className="text-sm font-black uppercase tracking-widest text-[#FBF5DD] px-2 flex items-center gap-2">
+          <div
+            className="text-sm font-black uppercase tracking-widest 
+              text-[#FBF5DD] px-2 flex items-center gap-2"
+          >
             KubeDash
           </div>
 
           <nav className="space-y-1.5">
             <button
               onClick={() => setActiveTab("overview")}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === "overview"
-                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
-                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
-              }`}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm 
+                font-semibold transition-all cursor-pointer ${
+                  activeTab === "overview"
+                    ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                    : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+                }`}
             >
               Overview
             </button>
             <button
               onClick={() => setActiveTab("pods")}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === "pods"
-                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
-                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
-              }`}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm 
+                font-semibold transition-all cursor-pointer ${
+                  activeTab === "pods"
+                    ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                    : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+                }`}
             >
               Pods Management
             </button>
             <button
               onClick={() => setActiveTab("audit")}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === "audit"
-                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
-                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
-              }`}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm 
+                font-semibold transition-all cursor-pointer ${
+                  activeTab === "audit"
+                    ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                    : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+                }`}
             >
               Audit logs
             </button>
             <button
               onClick={() => setActiveTab("settings")}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === "settings"
-                  ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
-                  : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
-              }`}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm 
+                font-semibold transition-all cursor-pointer ${
+                  activeTab === "settings"
+                    ? "bg-[#306D29] text-[#FBF5DD] shadow-md font-bold"
+                    : "text-[#E7E1B1] hover:bg-[#306D29]/30 hover:text-[#FBF5DD]"
+                }`}
             >
               Settings
             </button>
@@ -555,7 +608,10 @@ export default function App() {
             </div>
 
             {/* action panel */}
-            <div className="bg-[#E7E1B1]/30 border border-[#E7E1B1] p-5 rounded-xl shadow-sm flex items-center justify-between">
+            <div
+              className="bg-[#E7E1B1]/30 border border-[#E7E1B1] p-5 
+                rounded-xl shadow-sm flex items-center justify-between"
+            >
               <div>
                 <h3 className="text-sm font-bold text-[#0D530E]">
                   Cluster Quick Actions
@@ -577,8 +633,8 @@ export default function App() {
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className={`px-4 py-2 text-xs md:min-w-[150px] text-center font-bold rounded-lg border 
-                    transition-all active:scale-95 cursor-pointer ${
+                  className={`px-4 py-2 text-xs md:min-w-[150px] text-center font-bold 
+                    rounded-lg border transition-all active:scale-95 cursor-pointer ${
                       isRefreshing
                         ? "bg-[#FBF5DD]/20 border-[#E7E1B1]/60 text-[#0D530E]/70 cursor-not-allowed"
                         : "bg-[#FBF5DD] border-[#E7E1B1] text-[#0D530E] hover:bg-[#E7E1B1]/40"
@@ -718,7 +774,11 @@ export default function App() {
 
                                 {/* "System Core" badge */}
                                 {isSystemCore && (
-                                  <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 text-amber-800 border border-amber-600/20 shadow-sm">
+                                  <span
+                                    className="text-[9px] uppercase tracking-wider 
+                                      font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 
+                                      text-amber-800 border border-amber-600/20 shadow-sm"
+                                  >
                                     System Core
                                   </span>
                                 )}
@@ -761,9 +821,9 @@ export default function App() {
                                 <button
                                   onClick={() => setSshPod(pod)}
                                   className="px-2 py-1 text-[10px] font-bold 
-                                text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
-                                hover:bg-[#306D29] border border-[#306D29]/20 
-                                rounded-md transition-all cursor-pointer"
+                                    text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
+                                    hover:bg-[#306D29] border border-[#306D29]/20 
+                                    rounded-md transition-all cursor-pointer"
                                 >
                                   Terminal
                                 </button>
@@ -777,8 +837,8 @@ export default function App() {
                                   disabled={isRestarting === pod.name}
                                   title="Trigger Restart"
                                   className="p-1.5 rounded-lg border border-[#E7E1B1] bg-white text-[#306D29] 
-                                  hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
-                                  disabled:opacity-40 shadow-sm flex items-center justify-center"
+                                    hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
+                                    disabled:opacity-40 shadow-sm flex items-center justify-center"
                                 >
                                   {isRestarting === pod.name ? (
                                     <svg
@@ -797,7 +857,9 @@ export default function App() {
                                       <path
                                         className="opacity-75"
                                         fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 
+                                          12h4zm2 5.291A7.962 7.962 0 014 12H0c0 
+                                          3.042 1.135 5.824 3 7.938l3-2.647z"
                                       />
                                     </svg>
                                   ) : (
@@ -811,7 +873,10 @@ export default function App() {
                                       <path
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
-                                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                        d="M16.023 9.348h4.992v-.001M2.985 
+                                          19.644v-4.992m0 0h4.992m-4.993 0l3.181 
+                                          3.183a8.25 8.25 0 0013.803-3.7M4.031 
+                                          9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
                                       />
                                     </svg>
                                   )}
@@ -822,9 +887,9 @@ export default function App() {
                                   }
                                   disabled={deletingPod === pod.name}
                                   className="px-2.5 py-1 text-[10px] font-bold 
-                                text-red-700 hover:text-white bg-red-600/10 
-                                hover:bg-red-600 border border-red-600/20 rounded-md 
-                                transition-all cursor-pointer disabled:opacity-40"
+                                    text-red-700 hover:text-white bg-red-600/10 
+                                    hover:bg-red-600 border border-red-600/20 rounded-md 
+                                    transition-all cursor-pointer disabled:opacity-40"
                                 >
                                   {deletingPod === pod.name
                                     ? "Killing..."
@@ -864,22 +929,26 @@ export default function App() {
         >
           <div
             className="bg-[#FBF5DD] border border-[#E7E1B1] w-full max-w-md 
-              rounded-xl p-6 shadow-2xl space-y-4 animate-fade-in"
+              rounded-xl p-6 shadow-2xl space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto"
           >
             <div>
               <h3 className="text-base font-black text-[#0D530E]">
                 Deploy New Workspace Workload
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Spawns a container pod instance into namespace: default.
+                Spawns a container pod instance into namespace:{" "}
+                <span className="font-bold underline text-[#306D29]">
+                  {targetNamespace || "default"}
+                </span>
               </p>
             </div>
 
             <form onSubmit={handleDeployPod} className="space-y-4">
+              {/* pod name */}
               <div className="space-y-1">
                 <label
-                  className="text-[10px] font-bold uppercase 
-                    tracking-wider text-[#0D530E]/70"
+                  className="text-[10px] font-bold uppercase tracking-wider 
+                    text-[#0D530E]/70"
                 >
                   Pod Identity Name
                 </label>
@@ -899,6 +968,7 @@ export default function App() {
                 />
               </div>
 
+              {/* container image */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-[#0D530E]/70">
                   Container Image
@@ -915,10 +985,125 @@ export default function App() {
                 />
               </div>
 
+              {/* optional cluster config mapping */}
+              <div className="border border-[#E7E1B1] bg-[#E7E1B1]/20 p-3 rounded-lg space-y-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#0D530E]">
+                  Link Cluster Variables (Optional)
+                </div>
+
+                {configs.length === 0 ? (
+                  <div className="text-[10px] text-slate-500 italic">
+                    No configs available in this namespace boundary to map.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* choose object */}
+                    <div>
+                      <select
+                        value={attachConfigName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAttachConfigName(val);
+                          const chosen = configs.find(
+                            (c: any) => c.name === val,
+                          );
+                          setAttachConfigType(chosen ? chosen.type : "");
+                          if (!val) setAttachEnvVarKey("");
+                        }}
+                        className="w-full bg-white border border-[#E7E1B1] 
+                          text-[#0D530E] rounded-lg px-2 py-1.5 text-xs 
+                          outline-none focus:border-[#306D29]"
+                      >
+                        <option value="">
+                          -- Do not attach any resource variables --
+                        </option>
+                        {configs.map((cfg: any) => (
+                          <option key={cfg.name} value={cfg.name}>
+                            {cfg.name} ({cfg.type.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* choose target key */}
+                    {attachConfigName && (
+                      <div className="grid grid-cols-2 gap-2 animate-fadeIn">
+                        <div>
+                          <label
+                            className="block text-[9px] font-bold 
+                              text-slate-500 uppercase tracking-tight"
+                          >
+                            Select Cluster Key
+                          </label>
+                          <select
+                            required
+                            value={attachSourceKey}
+                            onChange={(e) => {
+                              const selectedKey = e.target.value;
+                              setAttachSourceKey(selectedKey);
+                              // autofill the container with key from config
+                              setAttachEnvVarKey(
+                                selectedKey
+                                  .toUpperCase()
+                                  .replace(/[^A-Z0-9_]/g, ""),
+                              );
+                            }}
+                            className="w-full bg-white border border-[#E7E1B1] 
+                              text-[#0D530E] rounded-lg px-2 py-1 text-xs outline-none"
+                          >
+                            <option value="">-- Choose Key --</option>
+                            {Object.keys(
+                              configs.find(
+                                (c: any) => c.name === attachConfigName,
+                              )?.data || {},
+                            ).map((k) => (
+                              <option key={k} value={k}>
+                                {k}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label
+                            className="block text-[9px] font-bold 
+                              text-slate-500 uppercase tracking-tight"
+                          >
+                            Inject Into Code As
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g., DB_PASS"
+                            value={attachEnvVarKey}
+                            onChange={(e) =>
+                              setAttachEnvVarKey(
+                                e.target.value
+                                  .toUpperCase()
+                                  .replace(/[^A-Z0-9_]/g, ""),
+                              )
+                            }
+                            className="w-full bg-white border border-[#E7E1B1] 
+                              text-[#0D530E] font-mono rounded-lg px-2 py-1 
+                              text-xs outline-none focus:border-[#306D29]"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* action pperations */}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setAttachConfigName("");
+                    setAttachConfigType("");
+                    setAttachEnvVarKey("");
+                    setAttachSourceKey(""); // clear
+                  }}
                   className="px-4 py-2 text-xs font-bold bg-[#E7E1B1] 
                     hover:bg-[#E7E1B1]/60 text-[#0D530E] rounded-lg 
                     cursor-pointer transition-all"

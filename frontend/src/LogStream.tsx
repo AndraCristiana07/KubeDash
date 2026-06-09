@@ -79,7 +79,7 @@ export default function LogStreamModal({
     >
       <div
         className="bg-[#FBF5DD] border border-[#E7E1B1] w-full max-w-5xl 
-            h-[600px] rounded-xl flex flex-col overflow-hidden shadow-2xl animate-enter"
+          h-[600px] rounded-xl flex flex-col overflow-hidden shadow-2xl animate-enter"
       >
         {/* header toolbar */}
         <div
@@ -96,7 +96,7 @@ export default function LogStreamModal({
               <span
                 className="font-mono text-[11px] font-bold text-[#E7E1B1] 
                   bg-[#306D29] px-2 py-0.5 rounded border border-[#E7E1B1]/10
-                  w-[140px] md:w-[220px] truncate cursor-help select-all"
+                  w-[50px] md:w-[100px] l:w-[150px] xl:w-[200px] truncate cursor-help select-all"
               >
                 {namespace}/{podName}
               </span>

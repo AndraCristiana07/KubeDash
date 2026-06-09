@@ -29,8 +29,13 @@ var clientset *kubernetes.Clientset
 var k8sConfig *rest.Config
 
 type DeployPodRequest struct {
-	PodName string `json:"pod_name" binding:"required"`
-	Image   string `json:"image" binding:"required"`
+	PodName    string `json:"pod_name"`
+	Image      string `json:"image"`
+	Namespace  string `json:"namespace"`
+	ConfigType string `json:"config_type"`
+	ConfigName string `json:"config_name"`
+	EnvKey     string `json:"env_key"`
+	SourceKey  string `json:"source_key"`
 }
 
 type PodTableEntry struct {
@@ -292,34 +297,70 @@ func deployNewPod(c *gin.Context) {
 	}
 
 	var req DeployPodRequest
+
 	// parse incoming payload from frontend
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input variables"})
 		return
+	}
+	// if empty -> default
+	if req.Namespace == "" || req.Namespace == "all" {
+		req.Namespace = "default"
+	}
+
+	// base structural container
+	container := corev1.Container{
+		Name:  "app-container",
+		Image: req.Image,
+	}
+
+	if req.ConfigName != "" && req.EnvKey != "" {
+		// no explicit source key -> fall back to matching the env_key
+		lookupKey := req.SourceKey
+		if lookupKey == "" {
+			lookupKey = req.EnvKey
+		}
+
+		envVar := corev1.EnvVar{
+			Name: req.EnvKey,
+		}
+
+		switch req.ConfigType {
+		case "secret":
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  lookupKey,
+				},
+			}
+		case "configmap":
+			envVar.ValueFrom = &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+					Key:                  lookupKey,
+				},
+			}
+		}
+
+		container.Env = append(container.Env, envVar)
 	}
 
 	// manifest engine definitions for client-go
 	podManifest := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.PodName,
-			Namespace: "default",
+			Namespace: req.Namespace,
 			Labels: map[string]string{
 				"deployed-by": "kubedash-engine",
 			},
 		},
 		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:            req.PodName + "-container",
-					Image:           req.Image,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-				},
-			},
+			Containers: []corev1.Container{container},
 		},
 	}
 
 	// exec payload delivery to active cluster context
-	_, err := clientset.CoreV1().Pods("default").Create(context.TODO(), podManifest, metav1.CreateOptions{})
+	_, err := clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), podManifest, metav1.CreateOptions{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

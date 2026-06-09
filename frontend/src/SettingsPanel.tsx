@@ -556,7 +556,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* value editor */}
         {!isCreating && selectedConfig && (
-          <div className="bg-[#FBF5DD]/60 border border-[#E7E1B1]/xl rounded-xl p-4 space-y-4">
+          <div
+            className="bg-[#FBF5DD]/60 border border-[#E7E1B1]/xl 
+                rounded-xl p-4 space-y-4"
+          >
             <div className="flex justify-between items-center">
               <div className="text-xs font-mono font-bold text-[#0D530E]">
                 Editing Configuration Keys for:{" "}
@@ -567,7 +570,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedConfig(null)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 
+                    text-xs font-bold cursor-pointer"
               >
                 Cancel
               </button>
