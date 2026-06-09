@@ -59,9 +59,13 @@ export default function App() {
 
   const [attachConfigType, setAttachConfigType] = useState("");
   const [attachConfigName, setAttachConfigName] = useState("");
-  const [attachEnvVarKey, setAttachEnvVarKey] = useState("");
-  const [attachSourceKey, setAttachSourceKey] = useState("");
-
+  // const [attachEnvVarKey, setAttachEnvVarKey] = useState("");
+  // const [attachSourceKey, setAttachSourceKey] = useState("");
+  const [envMappings, setEnvMappings] = useState<
+    { sourceKey: string; envKey: string }[]
+  >([
+    { sourceKey: "", envKey: "" }, // starts with one clean row ready
+  ]);
   const [configs, setConfigs] = useState<any[]>([]);
 
   //for config object
@@ -302,9 +306,17 @@ export default function App() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  const handleDeployPod = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleDeployPod = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newPodName || !newPodImage) return;
+
+    // filter rows
+    const activeMappings = envMappings
+      .filter((m) => m.sourceKey.trim() !== "")
+      .map((m) => ({
+        source_key: m.sourceKey,
+        env_key: m.envKey,
+      }));
 
     setIsDeploying(true);
     try {
@@ -317,20 +329,17 @@ export default function App() {
           namespace: targetNamespace || "default",
           config_type: attachConfigType,
           config_name: attachConfigName,
-          env_key: attachEnvVarKey, // what the code expects
-          source_key: attachSourceKey, // the key inside the config
+          mappings: activeMappings,
         }),
       });
 
       if (res.ok) {
-        // clear states
         setIsModalOpen(false);
         setNewPodName("");
         setNewPodImage("");
         setAttachConfigName("");
         setAttachConfigType("");
-        setAttachEnvVarKey("");
-        setAttachSourceKey("");
+        setEnvMappings([{ sourceKey: "", envKey: "" }]); // reset back to a single mapping row
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
       } else {
         const errorText = await res.text();
@@ -1116,7 +1125,8 @@ export default function App() {
                             (c: any) => c.name === val,
                           );
                           setAttachConfigType(chosen ? chosen.type : "");
-                          if (!val) setAttachEnvVarKey("");
+                          if (!val)
+                            setEnvMappings([{ sourceKey: "", envKey: "" }]);
                         }}
                         className="w-full bg-white border border-[#E7E1B1] 
                           text-[#0D530E] rounded-lg px-2 py-1.5 text-xs 
@@ -1133,68 +1143,103 @@ export default function App() {
                       </select>
                     </div>
 
-                    {/* choose target key */}
+                    {/* choose target keys */}
                     {attachConfigName && (
-                      <div className="grid grid-cols-2 gap-2 animate-fadeIn">
-                        <div>
-                          <label
-                            className="block text-[9px] font-bold 
-                              text-slate-500 uppercase tracking-tight"
-                          >
-                            Select Cluster Key
+                      <div className="space-y-3 pt-2 border-t border-[#E7E1B1]/40">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">
+                            Map Resource Keys to Container
                           </label>
-                          <select
-                            required
-                            value={attachSourceKey}
-                            onChange={(e) => {
-                              const selectedKey = e.target.value;
-                              setAttachSourceKey(selectedKey);
-                              // autofill the container with key from config
-                              setAttachEnvVarKey(
-                                selectedKey
-                                  .toUpperCase()
-                                  .replace(/[^A-Z0-9_]/g, ""),
-                              );
-                            }}
-                            className="w-full bg-white border border-[#E7E1B1] 
-                              text-[#0D530E] rounded-lg px-2 py-1 text-xs outline-none"
-                          >
-                            <option value="">-- Choose Key --</option>
-                            {Object.keys(
-                              configs.find(
-                                (c: any) => c.name === attachConfigName,
-                              )?.data || {},
-                            ).map((k) => (
-                              <option key={k} value={k}>
-                                {k}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label
-                            className="block text-[9px] font-bold 
-                              text-slate-500 uppercase tracking-tight"
-                          >
-                            Inject Into Code As
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g., DB_PASS"
-                            value={attachEnvVarKey}
-                            onChange={(e) =>
-                              setAttachEnvVarKey(
-                                e.target.value
-                                  .toUpperCase()
-                                  .replace(/[^A-Z0-9_]/g, ""),
-                              )
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEnvMappings([
+                                ...envMappings,
+                                { sourceKey: "", envKey: "" },
+                              ])
                             }
-                            className="w-full bg-white border border-[#E7E1B1] 
-                              text-[#0D530E] font-mono rounded-lg px-2 py-1 
-                              text-xs outline-none focus:border-[#306D29]"
-                          />
+                            className="text-[10px] text-[#306D29] hover:text-[#0D530E] font-bold cursor-pointer"
+                          >
+                            + Add Variable Mapping
+                          </button>
                         </div>
+
+                        {envMappings.map((mapping, idx) => (
+                          <div
+                            key={idx}
+                            className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end relative pb-1 animate-fadeIn"
+                          >
+                            <div>
+                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-tight mb-0.5">
+                                Select Cluster Key
+                              </label>
+                              <select
+                                required
+                                value={mapping.sourceKey}
+                                onChange={(e) => {
+                                  const selectedKey = e.target.value;
+                                  const updated = [...envMappings];
+                                  updated[idx].sourceKey = selectedKey;
+                                  // set variable name inside container to match source
+                                  updated[idx].envKey = selectedKey
+                                    .toUpperCase()
+                                    .replace(/[^A-Z0-9_]/g, "");
+                                  setEnvMappings(updated);
+                                }}
+                                className="w-full bg-white border border-[#E7E1B1] text-[#0D530E] rounded-lg px-2 py-1 text-xs outline-none"
+                              >
+                                <option value="">-- Choose Key --</option>
+                                {Object.keys(
+                                  configs.find(
+                                    (c: any) => c.name === attachConfigName,
+                                  )?.data || {},
+                                ).map((k) => (
+                                  <option key={k} value={k}>
+                                    {k}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex-1">
+                                <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-tight mb-0.5">
+                                  Inject Into Code As
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g., DB_PASS"
+                                  value={mapping.envKey}
+                                  onChange={(e) => {
+                                    const updated = [...envMappings];
+                                    updated[idx].envKey = e.target.value
+                                      .toUpperCase()
+                                      .replace(/[^A-Z0-9_]/g, "");
+                                    setEnvMappings(updated);
+                                  }}
+                                  className="w-full bg-white border border-[#E7E1B1] text-[#0D530E] font-mono rounded-lg px-2 py-1 text-xs outline-none focus:border-[#306D29]"
+                                />
+                              </div>
+                              {/* row delete */}
+                              {envMappings.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEnvMappings(
+                                      envMappings.filter(
+                                        (_, mIdx) => mIdx !== idx,
+                                      ),
+                                    )
+                                  }
+                                  className="text-red-600 hover:text-red-800 text-xs font-bold pt-4 px-1 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1209,8 +1254,7 @@ export default function App() {
                     setIsModalOpen(false);
                     setAttachConfigName("");
                     setAttachConfigType("");
-                    setAttachEnvVarKey("");
-                    setAttachSourceKey(""); // clear
+                    setEnvMappings([{ sourceKey: "", envKey: "" }]);
                   }}
                   className="px-4 py-2 text-xs font-bold bg-[#E7E1B1] 
                     hover:bg-[#E7E1B1]/60 text-[#0D530E] rounded-lg 

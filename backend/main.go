@@ -28,14 +28,18 @@ import (
 var clientset *kubernetes.Clientset
 var k8sConfig *rest.Config
 
+type EnvMapping struct {
+	SourceKey string `json:"source_key"` // key inside ConfigMap/Secret
+	EnvKey    string `json:"env_key"`    // name inside pod container
+}
+
 type DeployPodRequest struct {
-	PodName    string `json:"pod_name"`
-	Image      string `json:"image"`
-	Namespace  string `json:"namespace"`
-	ConfigType string `json:"config_type"`
-	ConfigName string `json:"config_name"`
-	EnvKey     string `json:"env_key"`
-	SourceKey  string `json:"source_key"`
+	PodName    string       `json:"pod_name"`
+	Image      string       `json:"image"`
+	Namespace  string       `json:"namespace"`
+	ConfigType string       `json:"config_type"`
+	ConfigName string       `json:"config_name"`
+	Mappings   []EnvMapping `json:"mappings"`
 }
 
 type PodTableEntry struct {
@@ -315,37 +319,36 @@ func deployNewPod(c *gin.Context) {
 		Image: req.Image,
 	}
 
-	if req.ConfigName != "" && req.EnvKey != "" {
-		// no explicit source key -> fall back to matching the env_key
-		lookupKey := req.SourceKey
-		if lookupKey == "" {
-			lookupKey = req.EnvKey
-		}
-
-		envVar := corev1.EnvVar{
-			Name: req.EnvKey,
-		}
-
-		switch req.ConfigType {
-		case "secret":
-			envVar.ValueFrom = &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
-					Key:                  lookupKey,
-				},
+	if req.ConfigName != "" && len(req.Mappings) > 0 {
+		for _, mapping := range req.Mappings {
+			if mapping.SourceKey == "" || mapping.EnvKey == "" {
+				continue
 			}
-		case "configmap":
-			envVar.ValueFrom = &corev1.EnvVarSource{
-				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
-					Key:                  lookupKey,
-				},
-			}
-		}
 
-		container.Env = append(container.Env, envVar)
+			envVar := corev1.EnvVar{
+				Name: mapping.EnvKey,
+			}
+
+			switch req.ConfigType {
+			case "secret":
+				envVar.ValueFrom = &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+						Key:                  mapping.SourceKey, // target source key
+					},
+				}
+			case "configmap":
+				envVar.ValueFrom = &corev1.EnvVarSource{
+					ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: req.ConfigName},
+						Key:                  mapping.SourceKey,
+					},
+				}
+			}
+
+			container.Env = append(container.Env, envVar)
+		}
 	}
-
 	// manifest engine definitions for client-go
 	podManifest := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
