@@ -37,6 +37,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   >([
     { key: "", value: "" }, // starts with one empty row ready to fill
   ]);
+
+  const [isBulkMode, setIsBulkMode] = useState<boolean>(false);
+
   const fetchClusterConfigs = async () => {
     setIsLoading(true);
     try {
@@ -413,6 +416,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
       </div>
+      {/* TODO: set a tooltip for longer config names  */}
       {/* configMap & secrets */}
       <div
         className="w-full max-w-2xl mx-auto bg-[#E7E1B1]/30 
@@ -436,6 +440,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onClick={() => {
               setIsCreating(!isCreating);
               setSelectedConfig(null); // close editor if switching to creation mode
+              setIsBulkMode(false);
             }}
             className={`px-3 py-1.5 text-xs font-black rounded-lg cursor-pointer transition-all ${
               isCreating
@@ -510,7 +515,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g., auth-service-props"
+                  placeholder={
+                    newBlockType === "secret"
+                      ? `e.g., db_auth`
+                      : `e.g., auth-service-props`
+                  }
                   value={newBlockName}
                   onChange={(e) =>
                     setNewBlockName(
@@ -554,80 +563,163 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   className="text-[10px] font-mono font-bold 
                     text-slate-500 uppercase tracking-wide"
                 >
-                  Configuration Properties Map
+                  {isBulkMode
+                    ? "Raw Environment Variables Block (.env format)"
+                    : "Configuration Properties Map"}
                 </label>
+
+                {/* format toggle */}
                 <button
                   type="button"
-                  onClick={() =>
-                    setNewBlockFields([
-                      ...newBlockFields,
-                      { key: "", value: "" },
-                    ])
-                  }
+                  onClick={() => setIsBulkMode(!isBulkMode)}
                   className="text-[10px] text-[#306D29] hover:text-[#0D530E] 
-                    font-bold cursor-pointer"
+                    font-extrabold cursor-pointer underline decoration-dotted"
                 >
-                  + Add Key Row
+                  {isBulkMode
+                    ? "Switch to Individual Key Fields"
+                    : "Paste Entire .env Document Block"}
                 </button>
               </div>
 
-              {newBlockFields.map((field, idx) => (
-                <div
-                  key={idx}
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-3 
-                    items-end relative animate-fadeIn"
-                >
-                  <div className="space-y-1">
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., DB_PASSWORD"
-                      value={field.key}
-                      onChange={(e) => {
-                        const updated = [...newBlockFields];
-                        updated[idx].key = e.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9_]/g, "");
-                        setNewBlockFields(updated);
-                      }}
-                      className="w-full bg-white border border-[#E7E1B1] 
-                        text-[#0D530E] font-mono rounded-lg px-3 py-1.5 
-                        text-xs outline-none focus:border-[#306D29]"
-                    />
-                  </div>
-                  <div className="space-y-1 flex items-center gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., value"
-                      value={field.value}
-                      onChange={(e) => {
-                        const updated = [...newBlockFields];
-                        updated[idx].value = e.target.value;
-                        setNewBlockFields(updated);
-                      }}
-                      className="w-full bg-white border border-[#E7E1B1] 
-                        text-[#0D530E] font-mono rounded-lg px-3 py-1.5 
-                        text-xs outline-none focus:border-[#306D29]"
-                    />
-                    {/* delete row button (only shows if there's more than one row) */}
-                    {newBlockFields.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNewBlockFields(
-                            newBlockFields.filter((_, fIdx) => fIdx !== idx),
-                          )
-                        }
-                        className="text-red-600 hover:text-red-800 text-xs 
-                            font-bold px-1 cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
+              {isBulkMode ? (
+                // bulk import
+                <div className="space-y-1 animate-fadeIn">
+                  <textarea
+                    rows={6}
+                    placeholder={
+                      newBlockType === "secret"
+                        ? `POSTGRES_PASSWORD=super_secure_db_pass_99\nJWT_KEY=a7b3c2d9e1f5g4h6_token`
+                        : `DB_HOST=postgres-service.default.svc.cluster.local\nDB_PORT=5432\nLOG_LEVEL=DEBUG\nENABLE_CACHE=true`
+                    }
+                    onChange={(e) => {
+                      const lines = e.target.value.split("\n");
+                      const parsedFields = lines
+                        .map((line) => {
+                          if (line.trim().startsWith("#") || line.trim() === "")
+                            return null;
+                          const equalIndex = line.indexOf("=");
+                          if (equalIndex === -1) return null;
+
+                          const rawKey = line.substring(0, equalIndex).trim();
+                          const rawValue = line
+                            .substring(equalIndex + 1)
+                            .trim();
+
+                          if (!rawKey) return null;
+
+                          return {
+                            key: rawKey
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9_]/g, ""),
+                            value: rawValue,
+                          };
+                        })
+                        .filter(
+                          (field): field is { key: string; value: string } =>
+                            field !== null,
+                        );
+
+                      setNewBlockFields(
+                        parsedFields.length > 0
+                          ? parsedFields
+                          : [{ key: "", value: "" }],
+                      );
+                    }}
+                    className="w-full bg-white border border-[#E7E1B1] text-[#0D530E] 
+                      font-mono rounded-xl px-3 py-2 text-xs outline-none 
+                      focus:border-[#306D29] leading-relaxed resize-y"
+                  />
+                  <p className="text-[9px] text-slate-400 font-mono italic">
+                    Lines without a clear "=" character assignment layout will
+                    be skipped. Values can contain extra "=" markers safely.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                // single rows key-value insertion
+                <>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewBlockFields([
+                          ...newBlockFields,
+                          { key: "", value: "" },
+                        ])
+                      }
+                      className="text-[10px] text-[#306D29] hover:text-[#0D530E] 
+                        font-bold cursor-pointer"
+                    >
+                      + Add Single Key Row
+                    </button>
+                  </div>
+
+                  {newBlockFields.map((field, idx) => (
+                    <div
+                      key={idx}
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-3 
+                        items-end relative animate-fadeIn"
+                    >
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          required
+                          placeholder={
+                            newBlockType === "secret"
+                              ? `DB_PASSWORD`
+                              : `DB_HOST`
+                          }
+                          value={field.key}
+                          onChange={(e) => {
+                            const updated = [...newBlockFields];
+                            updated[idx].key = e.target.value
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9_]/g, "");
+                            setNewBlockFields(updated);
+                          }}
+                          className="w-full bg-white border border-[#E7E1B1] 
+                            text-[#0D530E] font-mono rounded-lg px-3 py-1.5 
+                            text-xs outline-none focus:border-[#306D29]"
+                        />
+                      </div>
+                      <div className="space-y-1 flex items-center gap-2">
+                        <input
+                          type="text"
+                          required
+                          placeholder={
+                            newBlockType === "secret"
+                              ? `secret-password`
+                              : `postgress`
+                          }
+                          value={field.value}
+                          onChange={(e) => {
+                            const updated = [...newBlockFields];
+                            updated[idx].value = e.target.value;
+                            setNewBlockFields(updated);
+                          }}
+                          className="w-full bg-white border border-[#E7E1B1] 
+                            text-[#0D530E] font-mono rounded-lg px-3 py-1.5 
+                            text-xs outline-none focus:border-[#306D29]"
+                        />
+                        {newBlockFields.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setNewBlockFields(
+                                newBlockFields.filter(
+                                  (_, fIdx) => fIdx !== idx,
+                                ),
+                              )
+                            }
+                            className="text-red-600 hover:text-red-800 text-xs font-bold px-1 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
 
             <button
