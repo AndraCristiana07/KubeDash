@@ -71,3 +71,19 @@ Actions:
 ## Audit Table
 
 Here you can see all logs paginated with search and filtes for severity. You can also set how many logs per page you can see.
+
+## Hardware metrics
+
+Used a Kubernetes metrics server to get hardware metrics over running pods.
+
+I used:
+
+```sh
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+```
+
+On this page there are 2 tabs:
+
+- on one there is a live table with metrics over pods with cpu load, RAM allocation NVIDIA GPU COMPUTE and status
+- on the other one they are live spikelines on history of hardware metrics
