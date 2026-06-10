@@ -273,7 +273,6 @@ export default function LogStreamModal({
                 );
               })
             ) : (
-              // TODO: text is too dark or too slim to be seen on black
               <div className="text-[#4E8D49] italic py-8 text-center font-bold">
                 {logs.length === 0
                   ? "Waiting for incoming live infrastructure stream events from core client engine..."

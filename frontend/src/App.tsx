@@ -261,7 +261,8 @@ export default function App() {
                   toast.dismiss(t.id);
                   toast.remove(t.id);
                 }}
-                className="text-red-700/50 hover:text-red-700 p-0.5 rounded transition-colors focus:outline-none cursor-pointer flex-shrink-0"
+                className="text-red-700/50 hover:text-red-700 p-0.5 rounded 
+                  transition-colors focus:outline-none cursor-pointer flex-shrink-0"
                 aria-label="Close alert"
               >
                 <svg
@@ -671,8 +672,14 @@ export default function App() {
           <div className="w-full max-w-4xl mx-auto space-y-6">
             {/* metrics row */}
             <div className="grid grid-cols-3 gap-5">
-              <div className="bg-[#E7E1B1]/40 border border-[#E7E1B1] p-5 rounded-xl shadow-sm">
-                <div className="text-xs font-bold text-[#0D530E]/70 uppercase tracking-wider">
+              <div
+                className="bg-[#E7E1B1]/40 border border-[#E7E1B1] p-5 
+                  rounded-xl shadow-sm"
+              >
+                <div
+                  className="text-xs font-bold text-[#0D530E]/70 
+                    uppercase tracking-wider"
+                >
                   Cluster State
                 </div>
                 <div

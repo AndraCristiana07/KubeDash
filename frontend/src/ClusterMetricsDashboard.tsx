@@ -74,11 +74,135 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   // slice the live items array to isolate the view window
   const currentMetricRows = filteredRows.slice(indexOfFirstRow, indexOfLastRow);
 
+  const allMetricsArray = Object.values(metrics);
+  const totalPodsCount = allMetricsArray.length;
+
+  const globalSummary = allMetricsArray.reduce(
+    (acc, current) => {
+      acc.cpu += current.cpu_usage;
+      acc.mem += current.mem_usage;
+      if (current.gpu_usage > 0) {
+        acc.activeGPUs += 1;
+        acc.gpuSum += current.gpu_usage;
+      }
+      return acc;
+    },
+    { cpu: 0, mem: 0, activeGPUs: 0, gpuSum: 0 },
+  );
+  const avgGpuLoad =
+    globalSummary.activeGPUs > 0
+      ? Math.round(globalSummary.gpuSum / globalSummary.activeGPUs)
+      : 0;
+
   return (
     <div className="p-6 bg-[#FBF5DD] min-h-screen text-slate-800">
-      <div className="bg-white border border-[#E7E1B1] rounded-xl shadow-sm overflow-hidden flex flex-col">
+      {/* global status  */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* total pods */}
+        <div
+          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
+            shadow-sm flex flex-col justify-between font-mono"
+        >
+          <span
+            className="text-[10px] uppercase font-bold 
+                tracking-wider text-slate-500"
+          >
+            Managed Pods
+          </span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-black text-[#0D530E]">
+              {totalPodsCount}
+            </span>
+            <span className="text-xs text-slate-400">Allocated Nodes</span>
+          </div>
+          <div
+            className="text-[10px] text-emerald-700 font-bold mt-2 
+                flex items-center gap-1"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Collecting from Stream
+          </div>
+        </div>
+
+        {/* total CPU load */}
+        <div
+          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
+            shadow-sm flex flex-col justify-between font-mono"
+        >
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+            Aggregated CPU Engine Load
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-2xl font-black text-[#0D530E]">
+              {globalSummary.cpu.toLocaleString()}
+            </span>
+            <span className="text-xs font-bold text-slate-600">millicores</span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-2">
+            Equates to ~
+            <span className="font-bold text-[#306D29]">
+              {(globalSummary.cpu / 1000).toFixed(2)}
+            </span>{" "}
+            full cores
+          </div>
+        </div>
+
+        {/* total RAM capacity */}
+        <div
+          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
+            shadow-sm flex flex-col justify-between font-mono"
+        >
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+            Total RAM Allocation
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-2xl font-black text-[#0D530E]">
+              {globalSummary.mem >= 1024
+                ? (globalSummary.mem / 1024).toFixed(2)
+                : globalSummary.mem}
+            </span>
+            <span className="text-xs font-bold text-slate-600">
+              {globalSummary.mem >= 1024 ? "GB" : "MB"}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-2">
+            Spanning across all working namespaces
+          </div>
+        </div>
+
+        {/* GPU matrix load */}
+        <div
+          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
+            shadow-sm flex flex-col justify-between font-mono"
+        >
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+            NVIDIA GPU Matrix Compute
+          </span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-black text-[#0D530E]">
+              {globalSummary.activeGPUs > 0 ? `${avgGpuLoad}%` : "0%"}
+            </span>
+            <span className="text-xs text-slate-500">Avg Utilization</span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-2">
+            Active GPUs:{" "}
+            <span className="font-bold text-[#306D29]">
+              {globalSummary.activeGPUs}
+            </span>{" "}
+            units loaded
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="bg-white border border-[#E7E1B1] rounded-xl mt-10 
+            shadow-sm overflow-hidden flex flex-col"
+      >
         {/* filter actions */}
-        <div className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div
+          className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] 
+            flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
           <div className="text-xs font-bold text-[#0D530E] uppercase tracking-wider">
             Live Hardware Compute Monitor
           </div>
@@ -87,7 +211,9 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             placeholder="Filter nodes by pod/namespace..."
             value={filterText}
             onChange={handleFilterChange}
-            className="px-3 py-1.5 text-xs bg-white text-slate-800 placeholder-slate-400 rounded-md border border-[#E7E1B1] focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
+            className="px-3 py-1.5 text-xs bg-white text-slate-800 
+                placeholder-slate-400 rounded-md border border-[#E7E1B1] 
+                focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
           />
         </div>
 
@@ -95,7 +221,10 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse font-mono">
             <thead>
-              <tr className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold tracking-wider border-b border-[#306D29]/20 uppercase">
+              <tr
+                className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold 
+                    tracking-wider border-b border-[#306D29]/20 uppercase"
+              >
                 <th className="px-5 py-3">Namespace</th>
                 <th className="px-5 py-3">Target Infrastructure Pod</th>
                 <th className="px-5 py-3">CPU Load (Millicores)</th>
@@ -151,7 +280,11 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                     </td>
 
                     <td className="px-5 py-3.5 text-right">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2 
+                            py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 
+                            text-emerald-700 border border-emerald-200"
+                      >
                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
                         LIVE
                       </span>
@@ -175,7 +308,11 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         </div>
 
         {totalRows > 0 && (
-          <div className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none">
+          <div
+            className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] 
+                flex items-center justify-between font-mono text-[11px] 
+                text-slate-600 select-none"
+          >
             <div>
               Showing{" "}
               <span className="font-bold text-[#0D530E]">
@@ -190,14 +327,18 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <div className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] rounded font-bold text-[#0D530E]">
+              <div
+                className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] 
+                    rounded font-bold text-[#0D530E]"
+              >
                 PAGE {sanitizedPage} OF {totalPages}
               </div>
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={sanitizedPage === 1}
-                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white text-[#306D29] font-bold
-                  hover:bg-[#0D530E] hover:text-[#FBF5DD] transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
+                    text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
+                    transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
               >
                 {"<"} PREV
               </button>
@@ -207,8 +348,9 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                   setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                 }
                 disabled={sanitizedPage === totalPages}
-                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white text-[#306D29] font-bold
-                  hover:bg-[#0D530E] hover:text-[#FBF5DD] transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
+                    text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
+                    transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
               >
                 NEXT {">"}
               </button>

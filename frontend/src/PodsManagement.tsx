@@ -82,8 +82,8 @@ export default function ClusterPodsTable({
             <thead>
               <tr
                 className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
-                text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
-                sticky top-0 z-10"
+                    text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
+                    sticky top-0 z-10"
               >
                 <th className="p-4">Pod Name</th>
                 <th className="p-4">Namespace</th>
@@ -209,9 +209,9 @@ export default function ClusterPodsTable({
                               setEditMappings([{ sourceKey: "", envKey: "" }]);
                             }}
                             className="px-2 py-1 text-[10px] font-bold 
-                          text-blue-800 hover:text-white bg-blue-500/10 \
-                          hover:bg-blue-600 border border-blue-500/20 \
-                          rounded-md transition-all cursor-pointer"
+                                text-blue-800 hover:text-white bg-blue-500/10 \
+                                hover:bg-blue-600 border border-blue-500/20 \
+                                rounded-md transition-all cursor-pointer"
                           >
                             Edit
                           </button>
