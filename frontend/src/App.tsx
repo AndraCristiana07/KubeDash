@@ -7,6 +7,7 @@ import ClusterMetricsDashboard from "./ClusterMetricsDashboard";
 import ClusterPodsTable from "./PodsManagement";
 import toast, { Toaster } from "react-hot-toast";
 
+// TODO: everywhere where the system core pods show, put them in a diff color
 interface ClusterLog {
   ID: number;
   pod_name: string;

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 
 interface PodMetricRow {
   pod_name: string;
@@ -13,11 +14,52 @@ interface DashboardProps {
   metrics: Record<string, PodMetricRow>;
 }
 
+interface HistoryBucket {
+  cpu: number[];
+  mem: number[];
+  gpu: number[];
+}
+
 export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   const [filterText, setFilterText] = useState("");
-
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
+
+  const [activeSubTab, setActiveSubTab] = useState<"usage" | "trends">("usage");
+
+  const [historicalTrends, setHistoricalTrends] = useState<
+    Record<string, HistoryBucket>
+  >({});
+  const historyDepth = 15;
+
+  useEffect(() => {
+    setHistoricalTrends((prevHistory) => {
+      const updatedHistory = { ...prevHistory };
+
+      Object.values(metrics).forEach((pod) => {
+        const key = `${pod.namespace}/${pod.pod_name}`;
+        const existing = updatedHistory[key] || { cpu: [], mem: [], gpu: [] };
+
+        const nextCpu = [...existing.cpu, pod.cpu_usage].slice(-historyDepth);
+        const nextMem = [...existing.mem, pod.mem_usage].slice(-historyDepth);
+        const nextGpu = [...existing.gpu, pod.gpu_usage].slice(-historyDepth);
+
+        updatedHistory[key] = { cpu: nextCpu, mem: nextMem, gpu: nextGpu };
+      });
+
+      // evict old dead pods from history map state layers
+      const currentKeys = new Set(
+        Object.values(metrics).map((p) => `${p.namespace}/${p.pod_name}`),
+      );
+      Object.keys(updatedHistory).forEach((key) => {
+        if (!currentKeys.has(key)) {
+          delete updatedHistory[key];
+        }
+      });
+
+      return updatedHistory;
+    });
+  }, [metrics]);
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilterText(e.target.value);
@@ -54,25 +96,37 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
     );
   };
 
-  // filter the rows first
-  const filteredRows = Object.values(metrics).filter(
-    (row) =>
-      row.pod_name.toLowerCase().includes(filterText.toLowerCase()) ||
-      row.namespace.toLowerCase().includes(filterText.toLowerCase()),
-  );
+  const renderTrendLine = (dataPoints: number[], strokeColor = "#306D29") => {
+    if (!dataPoints || dataPoints.length < 2) {
+      return (
+        <span className="text-[10px] text-slate-400 italic font-mono">
+          Gathering vectors...
+        </span>
+      );
+    }
 
-  // calculate pagination metrics dynamically based on active filter results
-  const totalRows = filteredRows.length;
-  const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+    const min = Math.min(...dataPoints);
+    const max = Math.max(...dataPoints);
 
-  // current page boundary index to deal with dynamic data deletions
-  const sanitizedPage = Math.min(currentPage, totalPages);
-
-  const indexOfLastRow = sanitizedPage * rowsPerPage;
-  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
-
-  // slice the live items array to isolate the view window
-  const currentMetricRows = filteredRows.slice(indexOfFirstRow, indexOfLastRow);
+    return (
+      <div className="flex items-center gap-3">
+        <div className="w-[140px] h-[24px]">
+          <SparkLineChart
+            data={dataPoints}
+            height={24}
+            width={140}
+            color={strokeColor}
+            showTooltip={false}
+            showHighlight={true}
+            curve="linear"
+          />
+        </div>
+        <span className="text-[10px] text-slate-400 font-mono text-right min-w-[45px]">
+          {min === max ? min : `${min}→${max}`}
+        </span>
+      </div>
+    );
+  };
 
   const allMetricsArray = Object.values(metrics);
   const totalPodsCount = allMetricsArray.length;
@@ -89,16 +143,31 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
     },
     { cpu: 0, mem: 0, activeGPUs: 0, gpuSum: 0 },
   );
+
   const avgGpuLoad =
     globalSummary.activeGPUs > 0
       ? Math.round(globalSummary.gpuSum / globalSummary.activeGPUs)
       : 0;
 
+  const filteredRows = allMetricsArray.filter(
+    (row) =>
+      row.pod_name.toLowerCase().includes(filterText.toLowerCase()) ||
+      row.namespace.toLowerCase().includes(filterText.toLowerCase()),
+  );
+
+  const totalRows = filteredRows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+  const sanitizedPage = Math.min(currentPage, totalPages);
+
+  const indexOfLastRow = sanitizedPage * rowsPerPage;
+  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
+  const currentMetricRows = filteredRows.slice(indexOfFirstRow, indexOfLastRow);
+
   return (
-    <div className="p-6 bg-[#FBF5DD] min-h-screen text-slate-800">
-      {/* global status  */}
+    <div className="p-6 bg-[#FBF5DD] min-h-screen text-slate-800 space-y-6">
+      {/* sumarry */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* total pods */}
+        {/* managed pods */}
         <div
           className="bg-white border border-[#E7E1B1] rounded-xl p-4 
             shadow-sm flex flex-col justify-between font-mono"
@@ -119,12 +188,12 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             className="text-[10px] text-emerald-700 font-bold mt-2 
                 flex items-center gap-1"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Collecting from Stream
           </div>
         </div>
 
-        {/* total CPU load */}
+        {/* CPU Load */}
         <div
           className="bg-white border border-[#E7E1B1] rounded-xl p-4 
             shadow-sm flex flex-col justify-between font-mono"
@@ -147,7 +216,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
 
-        {/* total RAM capacity */}
+        {/* total memory */}
         <div
           className="bg-white border border-[#E7E1B1] rounded-xl p-4 
             shadow-sm flex flex-col justify-between font-mono"
@@ -170,7 +239,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
 
-        {/* GPU matrix load */}
+        {/* NVIDIA GPU */}
         <div
           className="bg-white border border-[#E7E1B1] rounded-xl p-4 
             shadow-sm flex flex-col justify-between font-mono"
@@ -194,17 +263,43 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 border-b border-[#E7E1B1] pb-px font-mono text-xs">
+        <button
+          onClick={() => setActiveSubTab("usage")}
+          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all 
+            font-bold tracking-wide cursor-pointer ${
+              activeSubTab === "usage"
+                ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+                : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+            }`}
+        >
+          Real-time Resource Usage
+        </button>
+        <button
+          onClick={() => setActiveSubTab("trends")}
+          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all 
+            font-bold tracking-wide cursor-pointer ${
+              activeSubTab === "trends"
+                ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+                : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+            }`}
+        >
+          Historical Trends
+        </button>
+      </div>
+
       <div
-        className="bg-white border border-[#E7E1B1] rounded-xl mt-10 
-            shadow-sm overflow-hidden flex flex-col"
+        className="bg-white border border-[#E7E1B1] rounded-b-xl 
+            rounded-tr-xl shadow-sm overflow-hidden flex flex-col"
       >
-        {/* filter actions */}
         <div
           className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] 
             flex flex-col sm:flex-row sm:items-center justify-between gap-3"
         >
           <div className="text-xs font-bold text-[#0D530E] uppercase tracking-wider">
-            Live Hardware Compute Monitor
+            {activeSubTab === "usage"
+              ? "Live Hardware Compute Monitor"
+              : "Timeline Velocity Vector Matrices"}
           </div>
           <input
             type="text"
@@ -217,96 +312,169 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           />
         </div>
 
-        {/* compute data grid */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse font-mono">
-            <thead>
-              <tr
-                className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold 
+          {activeSubTab === "usage" ? (
+            <table className="w-full text-left border-collapse font-mono">
+              <thead>
+                <tr
+                  className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold 
                     tracking-wider border-b border-[#306D29]/20 uppercase"
-              >
-                <th className="px-5 py-3">Namespace</th>
-                <th className="px-5 py-3">Target Infrastructure Pod</th>
-                <th className="px-5 py-3">CPU Load (Millicores)</th>
-                <th className="px-5 py-3">RAM Allocation</th>
-                <th className="px-5 py-3">NVIDIA GPU Compute</th>
-                <th className="px-5 py-3 text-right">Telemetry Health</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E7E1B1]/50 text-xs">
-              {currentMetricRows.length > 0 ? (
-                currentMetricRows.map((row) => (
-                  <tr
-                    key={`${row.namespace}/${row.pod_name}`}
-                    className="hover:bg-[#FBF5DD]/30 transition-colors"
-                  >
-                    <td className="px-5 py-3.5 font-bold text-[#306D29]">
-                      {row.namespace}
-                    </td>
-                    <td className="px-5 py-3.5 font-semibold text-slate-700">
-                      {row.pod_name}
-                    </td>
-
-                    {/* CPU column */}
-                    <td className="px-5 py-3.5">
-                      <div className="text-[11px] text-slate-500 mb-0.5">
-                        {row.cpu_usage}m
-                      </div>
-                      {renderProgressBar(row.cpu_usage, 2000, "cpu")}
-                    </td>
-
-                    {/* memory Column */}
-                    <td className="px-5 py-3.5">
-                      <div className="text-[11px] text-slate-500 mb-0.5">
-                        {row.mem_usage} MB
-                      </div>
-                      {renderProgressBar(row.mem_usage, 4096, "mem")}
-                    </td>
-
-                    {/* GPU core load column */}
-                    <td className="px-5 py-3.5">
-                      {row.gpu_usage > 0 ? (
-                        <>
-                          <div className="text-[11px] text-slate-500 mb-0.5">
-                            Core Active
-                          </div>
-                          {renderProgressBar(row.gpu_usage, 100, "gpu")}
-                        </>
-                      ) : (
-                        <span className="text-slate-400 italic text-[11px] tracking-wide select-none">
-                          —
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-5 py-3.5 text-right">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2 
+                >
+                  <th className="px-5 py-3">Namespace</th>
+                  <th className="px-5 py-3">Target Infrastructure Pod</th>
+                  <th className="px-5 py-3">CPU Load (Millicores)</th>
+                  <th className="px-5 py-3">RAM Allocation</th>
+                  <th className="px-5 py-3">NVIDIA GPU Compute</th>
+                  <th className="px-5 py-3 text-right">Telemetry Health</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E7E1B1]/50 text-xs">
+                {currentMetricRows.length > 0 ? (
+                  currentMetricRows.map((row) => (
+                    <tr
+                      key={`${row.namespace}/${row.pod_name}`}
+                      className="hover:bg-[#FBF5DD]/30 transition-colors"
+                    >
+                      <td className="px-5 py-3.5 font-bold text-[#306D29]">
+                        {row.namespace}
+                      </td>
+                      <td className="px-5 py-3.5 font-semibold text-slate-700">
+                        {row.pod_name}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="text-[11px] text-slate-500 mb-0.5">
+                          {row.cpu_usage}m
+                        </div>
+                        {renderProgressBar(row.cpu_usage, 2000, "cpu")}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="text-[11px] text-slate-500 mb-0.5">
+                          {row.mem_usage} MB
+                        </div>
+                        {renderProgressBar(row.mem_usage, 4096, "mem")}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {row.gpu_usage > 0 ? (
+                          <>
+                            <div className="text-[11px] text-slate-500 mb-0.5">
+                              Core Active
+                            </div>
+                            {renderProgressBar(row.gpu_usage, 100, "gpu")}
+                          </>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px] tracking-wide select-none">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2 
                             py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 
                             text-emerald-700 border border-emerald-200"
-                      >
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                        LIVE
-                      </span>
+                        >
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                          LIVE
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-5 py-12 text-center text-[#306D29]/60 italic font-medium"
+                    >
+                      No matching resource rows found.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-5 py-12 text-center text-[#306D29]/60 italic font-medium"
-                  >
-                    {filterText
-                      ? "No telemetry records match your active query criteria..."
-                      : "Waiting for telemetry broadcast stream vectors from cluster nodes..."}
-                  </td>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            /* historical sparklines */
+            <table className="w-full text-left border-collapse font-mono">
+              <thead>
+                <tr
+                  className="bg-[#53370D] text-[#FBF5DD] text-[11px] font-bold 
+                    tracking-wider border-b border-[#6D4929]/20 uppercase"
+                >
+                  <th className="px-5 py-3">Target Workspace Pod</th>
+                  <th className="px-5 py-3">CPU Usage Timeline (15 Ticks)</th>
+                  <th className="px-5 py-3">
+                    RAM Capacity Timeline (15 Ticks)
+                  </th>
+                  <th className="px-5 py-3">GPU Allocation Timeline</th>
+                  <th className="px-5 py-3 text-right">Telemetry Health</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[#E7E1B1]/50 text-xs">
+                {currentMetricRows.length > 0 ? (
+                  currentMetricRows.map((row) => {
+                    const targetKey = `${row.namespace}/${row.pod_name}`;
+                    const podHistory = historicalTrends[targetKey] || {
+                      cpu: [],
+                      mem: [],
+                      gpu: [],
+                    };
+
+                    return (
+                      <tr
+                        key={targetKey}
+                        className="hover:bg-[#FBF5DD]/30 transition-colors"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="font-bold text-slate-700">
+                            {row.pod_name}
+                          </div>
+                          <div className="text-[10px] font-bold text-amber-800">
+                            {row.namespace}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 vertical-middle">
+                          {renderTrendLine(podHistory.cpu, "#306D29")}
+                        </td>
+                        <td className="px-5 py-4 vertical-middle">
+                          {renderTrendLine(podHistory.mem, "#225da8")}
+                        </td>
+                        <td className="px-5 py-4 vertical-middle">
+                          {row.gpu_usage > 0 ||
+                          podHistory.gpu.some((v) => v > 0) ? (
+                            renderTrendLine(podHistory.gpu, "#b85c00")
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px] pl-2 select-none">
+                              — No Device Load
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2 
+                                py-0.5 text-[10px] font-bold rounded-md bg-amber-50 
+                                text-amber-800 border border-amber-200"
+                          >
+                            TRACKING
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-5 py-12 text-center text-slate-400 italic font-medium"
+                    >
+                      No matching historical logs found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
 
+        {/* pagination*/}
         {totalRows > 0 && (
           <div
             className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] 
@@ -336,9 +504,10 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={sanitizedPage === 1}
-                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
-                    text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
-                    transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                className="px-2.5 py-1 rounded border border-[#E7E1B1] 
+                    bg-white text-[#306D29] font-bold hover:bg-[#0D530E] 
+                    hover:text-[#FBF5DD] transition-all disabled:opacity-30 
+                    disabled:pointer-events-none cursor-pointer"
               >
                 {"<"} PREV
               </button>
