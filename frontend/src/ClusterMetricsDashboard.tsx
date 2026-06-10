@@ -20,12 +20,22 @@ interface HistoryBucket {
   gpu: number[];
 }
 
+type SortKey =
+  | "namespace"
+  | "pod_name"
+  | "cpu_usage"
+  | "mem_usage"
+  | "gpu_usage";
+type SortOrder = "asc" | "desc";
+
 export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
-
   const [activeSubTab, setActiveSubTab] = useState<"usage" | "trends">("usage");
+
+  const [sortKey, setSortKey] = useState<SortKey>("namespace");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
   const [historicalTrends, setHistoricalTrends] = useState<
     Record<string, HistoryBucket>
@@ -35,7 +45,6 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   useEffect(() => {
     setHistoricalTrends((prevHistory) => {
       const updatedHistory = { ...prevHistory };
-
       Object.values(metrics).forEach((pod) => {
         const key = `${pod.namespace}/${pod.pod_name}`;
         const existing = updatedHistory[key] || { cpu: [], mem: [], gpu: [] };
@@ -52,11 +61,8 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         Object.values(metrics).map((p) => `${p.namespace}/${p.pod_name}`),
       );
       Object.keys(updatedHistory).forEach((key) => {
-        if (!currentKeys.has(key)) {
-          delete updatedHistory[key];
-        }
+        if (!currentKeys.has(key)) delete updatedHistory[key];
       });
-
       return updatedHistory;
     });
   }, [metrics]);
@@ -66,37 +72,35 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
     setCurrentPage(1);
   };
 
-  const renderProgressBar = (
-    value: number,
-    max: number,
-    type: "cpu" | "mem" | "gpu",
-  ) => {
-    const percentage = Math.min(Math.round((value / max) * 100), 100);
-    const totalBlocks = 10;
-    const filledBlocks = Math.round((percentage / 100) * totalBlocks);
+  const handleSortRequest = (key: SortKey) => {
+    if (sortKey === key) {
+      // toggle sort directions
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortOrder(
+        key === "cpu_usage" || key === "mem_usage" || key === "gpu_usage"
+          ? "desc"
+          : "asc",
+      );
+    }
+    setCurrentPage(1); // go back to page 1 on sorting shifts
+  };
 
-    const filledChar = "■";
-    const emptyChar = "□";
-    const barString =
-      filledChar.repeat(filledBlocks) +
-      emptyChar.repeat(totalBlocks - filledBlocks);
-
-    let colorClass = "text-emerald-600 font-bold"; // safe load
-    if (percentage > 50 && percentage <= 80)
-      colorClass = "text-amber-600 font-bold"; // warning load
-    if (percentage > 80) colorClass = "text-red-500 font-bold animate-pulse"; // danger load
-
-    return (
-      <div className="font-mono text-xs flex items-center gap-2">
-        <span className={colorClass}>[{barString}]</span>
-        <span className="text-[#306D29] font-medium min-w-[35px] text-right">
-          {percentage}%
-        </span>
-      </div>
+  const renderSortIndicator = (key: SortKey) => {
+    if (sortKey !== key)
+      return <span className="text-slate-400/40 ml-1 select-none">⇅</span>;
+    return sortOrder === "asc" ? (
+      <span className="text-white ml-1 font-bold">▲</span>
+    ) : (
+      <span className="text-white ml-1 font-bold">▼</span>
     );
   };
 
-  const renderTrendLine = (dataPoints: number[], strokeColor = "#306D29") => {
+  const renderLibraryTrendLine = (
+    dataPoints: number[],
+    strokeColor = "#306D29",
+  ) => {
     if (!dataPoints || dataPoints.length < 2) {
       return (
         <span className="text-[10px] text-slate-400 italic font-mono">
@@ -104,7 +108,6 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         </span>
       );
     }
-
     const min = Math.min(...dataPoints);
     const max = Math.max(...dataPoints);
 
@@ -122,15 +125,41 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           />
         </div>
         <span className="text-[10px] text-slate-400 font-mono text-right min-w-[45px]">
-          {min === max ? min : `${min}→${max}`}
+          ({min === max ? min : `${min}→${max}`})
         </span>
       </div>
     );
   };
 
+  const renderProgressBar = (
+    value: number,
+    max: number,
+    type: "cpu" | "mem" | "gpu",
+  ) => {
+    const percentage = Math.min(Math.round((value / max) * 100), 100);
+    const totalBlocks = 10;
+    const filledBlocks = Math.round((percentage / 100) * totalBlocks);
+    const barString =
+      "■".repeat(filledBlocks) + "□".repeat(totalBlocks - filledBlocks);
+
+    let colorClass = "text-emerald-600 font-bold";
+    if (percentage > 50 && percentage <= 80)
+      colorClass = "text-amber-600 font-bold";
+    if (percentage > 80) colorClass = "text-red-500 font-bold animate-pulse";
+
+    return (
+      <div className="font-mono text-xs flex items-center gap-2">
+        <span className={colorClass}>[{barString}]</span>
+        <span className="text-[#306D29] font-medium min-w-[35px] text-right">
+          {percentage}%
+        </span>
+      </div>
+    );
+  };
+
+  // global summaries
   const allMetricsArray = Object.values(metrics);
   const totalPodsCount = allMetricsArray.length;
-
   const globalSummary = allMetricsArray.reduce(
     (acc, current) => {
       acc.cpu += current.cpu_usage;
@@ -143,7 +172,6 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
     },
     { cpu: 0, mem: 0, activeGPUs: 0, gpuSum: 0 },
   );
-
   const avgGpuLoad =
     globalSummary.activeGPUs > 0
       ? Math.round(globalSummary.gpuSum / globalSummary.activeGPUs)
@@ -155,27 +183,35 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
       row.namespace.toLowerCase().includes(filterText.toLowerCase()),
   );
 
-  const totalRows = filteredRows.length;
+  const sortedRows = [...filteredRows].sort((a, b) => {
+    const aVal = a[sortKey];
+    const bVal = b[sortKey];
+
+    if (typeof aVal === "string" && typeof bVal === "string") {
+      return sortOrder === "asc"
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    } else {
+      // number metric comparisons (CPU, Memory, GPU usages)
+      return sortOrder === "asc"
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
+    }
+  });
+
+  const totalRows = sortedRows.length;
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
   const sanitizedPage = Math.min(currentPage, totalPages);
-
   const indexOfLastRow = sanitizedPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
-  const currentMetricRows = filteredRows.slice(indexOfFirstRow, indexOfLastRow);
+  const currentMetricRows = sortedRows.slice(indexOfFirstRow, indexOfLastRow);
 
   return (
     <div className="p-6 bg-[#FBF5DD] min-h-screen text-slate-800 space-y-6">
       {/* sumarry */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* managed pods */}
-        <div
-          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
-            shadow-sm flex flex-col justify-between font-mono"
-        >
-          <span
-            className="text-[10px] uppercase font-bold 
-                tracking-wider text-slate-500"
-          >
+        <div className="bg-white border border-[#E7E1B1] rounded-xl p-4 shadow-sm flex flex-col justify-between font-mono">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
             Managed Pods
           </span>
           <div className="flex items-baseline gap-2 mt-1">
@@ -184,20 +220,13 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             </span>
             <span className="text-xs text-slate-400">Allocated Nodes</span>
           </div>
-          <div
-            className="text-[10px] text-emerald-700 font-bold mt-2 
-                flex items-center gap-1"
-          >
+          <div className="text-[10px] text-emerald-700 font-bold mt-2 flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Collecting from Stream
           </div>
         </div>
 
-        {/* CPU Load */}
-        <div
-          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
-            shadow-sm flex flex-col justify-between font-mono"
-        >
+        <div className="bg-white border border-[#E7E1B1] rounded-xl p-4 shadow-sm flex flex-col justify-between font-mono">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
             Aggregated CPU Engine Load
           </span>
@@ -216,11 +245,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
 
-        {/* total memory */}
-        <div
-          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
-            shadow-sm flex flex-col justify-between font-mono"
-        >
+        <div className="bg-white border border-[#E7E1B1] rounded-xl p-4 shadow-sm flex flex-col justify-between font-mono">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
             Total RAM Allocation
           </span>
@@ -239,11 +264,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
 
-        {/* NVIDIA GPU */}
-        <div
-          className="bg-white border border-[#E7E1B1] rounded-xl p-4 
-            shadow-sm flex flex-col justify-between font-mono"
-        >
+        <div className="bg-white border border-[#E7E1B1] rounded-xl p-4 shadow-sm flex flex-col justify-between font-mono">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
             NVIDIA GPU Matrix Compute
           </span>
@@ -266,36 +287,28 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
       <div className="flex items-center gap-2 border-b border-[#E7E1B1] pb-px font-mono text-xs">
         <button
           onClick={() => setActiveSubTab("usage")}
-          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all 
-            font-bold tracking-wide cursor-pointer ${
-              activeSubTab === "usage"
-                ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
-                : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
-            }`}
+          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all font-bold tracking-wide cursor-pointer ${
+            activeSubTab === "usage"
+              ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+              : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+          }`}
         >
           Real-time Resource Usage
         </button>
         <button
           onClick={() => setActiveSubTab("trends")}
-          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all 
-            font-bold tracking-wide cursor-pointer ${
-              activeSubTab === "trends"
-                ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
-                : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
-            }`}
+          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all font-bold tracking-wide cursor-pointer ${
+            activeSubTab === "trends"
+              ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+              : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+          }`}
         >
           Historical Trends
         </button>
       </div>
 
-      <div
-        className="bg-white border border-[#E7E1B1] rounded-b-xl 
-            rounded-tr-xl shadow-sm overflow-hidden flex flex-col"
-      >
-        <div
-          className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] 
-            flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-        >
+      <div className="bg-white border border-[#E7E1B1] rounded-b-xl rounded-tr-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="text-xs font-bold text-[#0D530E] uppercase tracking-wider">
             {activeSubTab === "usage"
               ? "Live Hardware Compute Monitor"
@@ -306,25 +319,46 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             placeholder="Filter nodes by pod/namespace..."
             value={filterText}
             onChange={handleFilterChange}
-            className="px-3 py-1.5 text-xs bg-white text-slate-800 
-                placeholder-slate-400 rounded-md border border-[#E7E1B1] 
-                focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
+            className="px-3 py-1.5 text-xs bg-white text-slate-800 placeholder-slate-400 rounded-md border border-[#E7E1B1] focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
           />
         </div>
 
         <div className="overflow-x-auto">
           {activeSubTab === "usage" ? (
+            // TODO: do smth about longer names rearranging columns
             <table className="w-full text-left border-collapse font-mono">
               <thead>
-                <tr
-                  className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold 
-                    tracking-wider border-b border-[#306D29]/20 uppercase"
-                >
-                  <th className="px-5 py-3">Namespace</th>
-                  <th className="px-5 py-3">Target Infrastructure Pod</th>
-                  <th className="px-5 py-3">CPU Load (Millicores)</th>
-                  <th className="px-5 py-3">RAM Allocation</th>
-                  <th className="px-5 py-3">NVIDIA GPU Compute</th>
+                <tr className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold tracking-wider border-b border-[#306D29]/20 uppercase select-none">
+                  <th
+                    onClick={() => handleSortRequest("namespace")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#306D29] transition-colors"
+                  >
+                    Namespace {renderSortIndicator("namespace")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("pod_name")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#306D29] transition-colors"
+                  >
+                    Target Infrastructure Pod {renderSortIndicator("pod_name")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("cpu_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#306D29] transition-colors"
+                  >
+                    CPU Load (Millicores) {renderSortIndicator("cpu_usage")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("mem_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#306D29] transition-colors"
+                  >
+                    RAM Allocation {renderSortIndicator("mem_usage")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("gpu_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#306D29] transition-colors"
+                  >
+                    NVIDIA GPU Compute {renderSortIndicator("gpu_usage")}
+                  </th>
                   <th className="px-5 py-3 text-right">Telemetry Health</th>
                 </tr>
               </thead>
@@ -368,11 +402,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
-                        <span
-                          className="inline-flex items-center gap-1.5 px-2 
-                            py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 
-                            text-emerald-700 border border-emerald-200"
-                        >
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
                           LIVE
                         </span>
@@ -395,16 +425,33 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             /* historical sparklines */
             <table className="w-full text-left border-collapse font-mono">
               <thead>
-                <tr
-                  className="bg-[#53370D] text-[#FBF5DD] text-[11px] font-bold 
-                    tracking-wider border-b border-[#6D4929]/20 uppercase"
-                >
-                  <th className="px-5 py-3">Target Workspace Pod</th>
-                  <th className="px-5 py-3">CPU Usage Timeline (15 Ticks)</th>
-                  <th className="px-5 py-3">
-                    RAM Capacity Timeline (15 Ticks)
+                <tr className="bg-[#53370D] text-[#FBF5DD] text-[11px] font-bold tracking-wider border-b border-[#6D4929]/20 uppercase select-none">
+                  <th
+                    onClick={() => handleSortRequest("pod_name")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#6D4929] transition-colors"
+                  >
+                    Target Workspace Pod {renderSortIndicator("pod_name")}
                   </th>
-                  <th className="px-5 py-3">GPU Allocation Timeline</th>
+                  <th
+                    onClick={() => handleSortRequest("cpu_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#6D4929] transition-colors"
+                  >
+                    CPU Usage Timeline (15 Ticks){" "}
+                    {renderSortIndicator("cpu_usage")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("mem_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#6D4929] transition-colors"
+                  >
+                    RAM Capacity Timeline (15 Ticks){" "}
+                    {renderSortIndicator("mem_usage")}
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("gpu_usage")}
+                    className="px-5 py-3 cursor-pointer hover:bg-[#6D4929] transition-colors"
+                  >
+                    GPU Allocation Timeline {renderSortIndicator("gpu_usage")}
+                  </th>
                   <th className="px-5 py-3 text-right">Telemetry Health</th>
                 </tr>
               </thead>
@@ -432,15 +479,15 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                           </div>
                         </td>
                         <td className="px-5 py-4 vertical-middle">
-                          {renderTrendLine(podHistory.cpu, "#306D29")}
+                          {renderLibraryTrendLine(podHistory.cpu, "#306D29")}
                         </td>
                         <td className="px-5 py-4 vertical-middle">
-                          {renderTrendLine(podHistory.mem, "#225da8")}
+                          {renderLibraryTrendLine(podHistory.mem, "#225da8")}
                         </td>
                         <td className="px-5 py-4 vertical-middle">
                           {row.gpu_usage > 0 ||
                           podHistory.gpu.some((v) => v > 0) ? (
-                            renderTrendLine(podHistory.gpu, "#b85c00")
+                            renderLibraryTrendLine(podHistory.gpu, "#b85c00")
                           ) : (
                             <span className="text-slate-400 italic text-[11px] pl-2 select-none">
                               — No Device Load
@@ -448,11 +495,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                           )}
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <span
-                            className="inline-flex items-center gap-1.5 px-2 
-                                py-0.5 text-[10px] font-bold rounded-md bg-amber-50 
-                                text-amber-800 border border-amber-200"
-                          >
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 text-amber-800 border border-amber-200">
                             TRACKING
                           </span>
                         </td>
@@ -476,29 +519,21 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
 
         {/* pagination*/}
         {totalRows > 0 && (
-          <div
-            className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] 
-                flex items-center justify-between font-mono text-[11px] 
-                text-slate-600 select-none"
-          >
+          <div className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none">
             <div>
               Showing{" "}
               <span className="font-bold text-[#0D530E]">
                 {indexOfFirstRow + 1}
               </span>
-              –
+              -
               <span className="font-bold text-[#0D530E]">
                 {Math.min(indexOfLastRow, totalRows)}
               </span>{" "}
               of <span className="font-bold text-[#0D530E]">{totalRows}</span>{" "}
               active data frames
             </div>
-
             <div className="flex items-center gap-1.5">
-              <div
-                className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] 
-                    rounded font-bold text-[#0D530E]"
-              >
+              <div className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] rounded font-bold text-[#0D530E]">
                 PAGE {sanitizedPage} OF {totalPages}
               </div>
               <button
@@ -511,15 +546,14 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               >
                 {"<"} PREV
               </button>
-
               <button
                 onClick={() =>
                   setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                 }
                 disabled={sanitizedPage === totalPages}
                 className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
-                    text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
-                    transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                  text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
+                  transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
               >
                 NEXT {">"}
               </button>
