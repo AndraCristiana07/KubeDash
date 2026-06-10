@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
+import SwapVertIcon from "@mui/icons-material/SwapVert";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
+import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 
 interface PodMetricRow {
   pod_name: string;
@@ -88,12 +93,14 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   };
 
   const renderSortIndicator = (key: SortKey) => {
-    if (sortKey !== key)
-      return <span className="text-slate-400/40 ml-1 select-none">⬆⬇</span>;
+    if (sortKey !== key) {
+      return <SwapVertIcon fontSize="inherit" />;
+    }
+
     return sortOrder === "asc" ? (
-      <span className="text-white ml-1 font-bold">⬆</span>
+      <ArrowUpwardIcon fontSize="inherit" />
     ) : (
-      <span className="text-white ml-1 font-bold">⬇</span>
+      <ArrowDownwardIcon fontSize="inherit" />
     );
   };
 
@@ -543,7 +550,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                     hover:text-[#FBF5DD] transition-all disabled:opacity-30 
                     disabled:pointer-events-none cursor-pointer"
               >
-                {"<"} PREV
+                <KeyboardArrowLeftIcon fontSize="small" /> PREV
               </button>
               <button
                 onClick={() =>
@@ -554,7 +561,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                   text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
                   transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
               >
-                NEXT {">"}
+                NEXT <KeyboardArrowRightIcon fontSize="small" />
               </button>
             </div>
           </div>

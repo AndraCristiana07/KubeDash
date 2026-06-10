@@ -1,6 +1,10 @@
-import React from "react";
-
-// Explicit data contract for a single Pod item
+import React, { useState } from "react";
+import SwapVertIcon from "@mui/icons-material/SwapVert";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
+import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
+import LockIcon from "@mui/icons-material/Lock";
 
 interface PodEntry {
   name: string;
@@ -35,6 +39,9 @@ interface ClusterPodsTableProps {
   formatPodAge: (seconds: number) => string;
 }
 
+type PodSortKey = "name" | "namespace" | "status" | "image" | "age_seconds";
+type SortOrder = "asc" | "desc";
+
 export default function ClusterPodsTable({
   clusterPods,
   targetNamespace,
@@ -52,6 +59,55 @@ export default function ClusterPodsTable({
   setEditMappings,
   formatPodAge,
 }: ClusterPodsTableProps) {
+  const [sortKey, setSortKey] = useState<PodSortKey>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 10;
+
+  const handleSortRequest = (key: PodSortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortOrder(key === "age_seconds" ? "desc" : "asc");
+    }
+  };
+
+  const renderSortIndicator = (key: PodSortKey) => {
+    if (sortKey !== key) {
+      return <SwapVertIcon fontSize="inherit" />;
+    }
+
+    return sortOrder === "asc" ? (
+      <ArrowUpwardIcon fontSize="inherit" />
+    ) : (
+      <ArrowDownwardIcon fontSize="inherit" />
+    );
+  };
+
+  const sortedPods = [...clusterPods].sort((a, b) => {
+    const aVal = a[sortKey];
+    const bVal = b[sortKey];
+
+    if (typeof aVal === "string" && typeof bVal === "string") {
+      return sortOrder === "asc"
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    } else {
+      return sortOrder === "asc"
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
+    }
+  });
+
+  const totalRows = sortedPods.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+  const sanitizedPage = Math.min(currentPage, totalPages);
+  const indexOfLastRow = sanitizedPage * rowsPerPage;
+  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
+  const currentPodsRows = sortedPods.slice(indexOfFirstRow, indexOfLastRow);
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
@@ -78,23 +134,48 @@ export default function ClusterPodsTable({
           rounded-xl overflow-hidden shadow-sm"
       >
         <div className="max-h-[480px] overflow-y-auto pr-px scrollbar-thin">
-          <table className="w-full text-left border-collapse text-xs relative">
+          <table className="w-full text-left border-collapse text-xs relative table-fixed">
             <thead>
               <tr
                 className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
                     text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
                     sticky top-0 z-10"
               >
-                <th className="p-4">Pod Name</th>
-                <th className="p-4">Namespace</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Container Image</th>
-                <th className="p-4 text-center">Age</th>
+                <th
+                  onClick={() => handleSortRequest("name")}
+                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                >
+                  Pod Name {renderSortIndicator("name")}
+                </th>
+                <th
+                  onClick={() => handleSortRequest("namespace")}
+                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                >
+                  Namespace {renderSortIndicator("namespace")}
+                </th>
+                <th
+                  onClick={() => handleSortRequest("status")}
+                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                >
+                  Status {renderSortIndicator("status")}
+                </th>
+                <th
+                  onClick={() => handleSortRequest("image")}
+                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                >
+                  Container Image {renderSortIndicator("image")}
+                </th>
+                <th
+                  onClick={() => handleSortRequest("age_seconds")}
+                  className="p-4 text-center cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                >
+                  Age {renderSortIndicator("age_seconds")}
+                </th>
                 <th className="p-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
-              {clusterPods.length === 0 ? (
+              {currentPodsRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -104,11 +185,11 @@ export default function ClusterPodsTable({
                   </td>
                 </tr>
               ) : (
-                clusterPods.map((pod) => {
+                currentPodsRows.map((pod) => {
                   const isSystemCore = pod.name.includes("kubedash-");
                   return (
                     <tr
-                      key={pod.name}
+                      key={`${pod.namespace}/${pod.name}`}
                       className={`transition-colors border-b border-[#E7E1B1]/10 ${
                         isSystemCore
                           ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
@@ -300,6 +381,48 @@ export default function ClusterPodsTable({
             </tbody>
           </table>
         </div>
+        {totalRows > 0 && (
+          <div className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none">
+            <div>
+              Showing{" "}
+              <span className="font-bold text-[#0D530E]">
+                {indexOfFirstRow + 1}
+              </span>
+              -
+              <span className="font-bold text-[#0D530E]">
+                {Math.min(indexOfLastRow, totalRows)}
+              </span>{" "}
+              of <span className="font-bold text-[#0D530E]">{totalRows}</span>{" "}
+              active pods
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] rounded font-bold text-[#0D530E]">
+                PAGE {sanitizedPage} OF {totalPages}
+              </div>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={sanitizedPage === 1}
+                className="px-2.5 py-1 rounded border border-[#E7E1B1] 
+                    bg-white text-[#306D29] font-bold hover:bg-[#0D530E] 
+                    hover:text-[#FBF5DD] transition-all disabled:opacity-30 
+                    disabled:pointer-events-none cursor-pointer"
+              >
+                <KeyboardArrowLeftIcon fontSize="small" /> PREV
+              </button>
+              <button
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                }
+                disabled={sanitizedPage === totalPages}
+                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
+                  text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
+                  transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              >
+                NEXT <KeyboardArrowRightIcon fontSize="small" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
