@@ -5,6 +5,7 @@ import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import LockIcon from "@mui/icons-material/Lock";
+import SettingsIcon from "@mui/icons-material/Settings";
 
 interface PodEntry {
   name: string;
@@ -72,17 +73,20 @@ export default function ClusterPodsTable({
       setSortKey(key);
       setSortOrder(key === "age_seconds" ? "desc" : "asc");
     }
+    setCurrentPage(1);
   };
 
   const renderSortIndicator = (key: PodSortKey) => {
-    if (sortKey !== key) {
-      return <SwapVertIcon fontSize="inherit" />;
-    }
-
-    return sortOrder === "asc" ? (
-      <ArrowUpwardIcon fontSize="inherit" />
-    ) : (
-      <ArrowDownwardIcon fontSize="inherit" />
+    return (
+      <span className="inline-flex items-center text-[13px] ml-1 opacity-80 select-none">
+        {sortKey !== key ? (
+          <SwapVertIcon fontSize="inherit" className="text-slate-400" />
+        ) : sortOrder === "asc" ? (
+          <ArrowUpwardIcon fontSize="inherit" />
+        ) : (
+          <ArrowDownwardIcon fontSize="inherit" />
+        )}
+      </span>
     );
   };
 
@@ -130,259 +134,281 @@ export default function ClusterPodsTable({
       </div>
 
       <div
-        className="bg-[#E7E1B1]/30 border border-[#E7E1B1] 
-          rounded-xl overflow-hidden shadow-sm"
+        className="w-full bg-[#E7E1B1]/30 border border-[#E7E1B1] 
+          rounded-xl overflow-hidden shadow-sm flex flex-col items-stretch"
       >
-        <div className="max-h-[480px] overflow-y-auto pr-px scrollbar-thin">
-          <table className="w-full text-left border-collapse text-xs relative table-fixed">
-            <thead>
-              <tr
-                className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
-                    text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
-                    sticky top-0 z-10"
-              >
-                <th
-                  onClick={() => handleSortRequest("name")}
-                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+        <div className="w-full overflow-x-auto scrollbar-thin">
+          <div className="max-h-[480px] overflow-y-auto pr-px">
+            <table className="w-full text-left border-collapse text-xs relative min-w-[850px]">
+              <thead>
+                <tr
+                  className="bg-[#E7E1B1]/60 border-b border-[#E7E1B1] 
+                      text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
+                      sticky top-0 z-10 select-none"
                 >
-                  Pod Name {renderSortIndicator("name")}
-                </th>
-                <th
-                  onClick={() => handleSortRequest("namespace")}
-                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
-                >
-                  Namespace {renderSortIndicator("namespace")}
-                </th>
-                <th
-                  onClick={() => handleSortRequest("status")}
-                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
-                >
-                  Status {renderSortIndicator("status")}
-                </th>
-                <th
-                  onClick={() => handleSortRequest("image")}
-                  className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
-                >
-                  Container Image {renderSortIndicator("image")}
-                </th>
-                <th
-                  onClick={() => handleSortRequest("age_seconds")}
-                  className="p-4 text-center cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
-                >
-                  Age {renderSortIndicator("age_seconds")}
-                </th>
-                <th className="p-4 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
-              {currentPodsRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="p-8 text-center text-slate-400 italic bg-[#FBF5DD]/30"
+                  <th
+                    onClick={() => handleSortRequest("name")}
+                    className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
                   >
-                    No active pods found inside the current boundary context.
-                  </td>
+                    <div className="flex items-center gap-0.5">
+                      Pod Name {renderSortIndicator("name")}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("namespace")}
+                    className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                  >
+                    <div className="flex items-center gap-0.5">
+                      Namespace {renderSortIndicator("namespace")}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("status")}
+                    className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                  >
+                    <div className="flex items-center gap-0.5">
+                      Status {renderSortIndicator("status")}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("image")}
+                    className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                  >
+                    <div className="flex items-center gap-0.5">
+                      Container Image {renderSortIndicator("image")}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSortRequest("age_seconds")}
+                    className="p-4 text-center cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
+                  >
+                    <div className="flex items-center justify-center gap-0.5">
+                      Age {renderSortIndicator("age_seconds")}
+                    </div>
+                  </th>
+                  <th className="p-4 text-center">Action</th>
                 </tr>
-              ) : (
-                currentPodsRows.map((pod) => {
-                  const isSystemCore = pod.name.includes("kubedash-");
-                  return (
-                    <tr
-                      key={`${pod.namespace}/${pod.name}`}
-                      className={`transition-colors border-b border-[#E7E1B1]/10 ${
-                        isSystemCore
-                          ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
-                          : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
-                      }`}
+              </thead>
+              <tbody className="divide-y divide-[#E7E1B1]/60 font-mono text-slate-700">
+                {currentPodsRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="p-8 text-center text-slate-400 italic bg-[#FBF5DD]/30"
                     >
-                      <td className="p-4 font-bold text-[#0D530E]">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span>{pod.name}</span>
-                          {isSystemCore && (
-                            <span
-                              className="text-[9px] uppercase tracking-wider 
-                                font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 
-                                text-amber-800 border border-amber-600/20 shadow-sm"
-                            >
-                              System Core
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4 text-slate-600">{pod.namespace}</td>
-                      <td className="p-4">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] 
-                        font-bold tracking-wide uppercase ${
-                          pod.status === "Running"
-                            ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
-                            : pod.status === "Pending"
-                              ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
-                              : "bg-red-600/10 text-red-700 border border-red-600/20"
+                      No active pods found inside the current boundary context.
+                    </td>
+                  </tr>
+                ) : (
+                  currentPodsRows.map((pod) => {
+                    const isSystemCore = pod.name.includes("kubedash-");
+                    return (
+                      <tr
+                        key={`${pod.namespace}/${pod.name}`}
+                        className={`transition-colors border-b border-[#E7E1B1]/10 ${
+                          isSystemCore
+                            ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                            : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
                         }`}
-                        >
-                          {pod.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-[#306D29] font-medium max-w-[200px]">
-                        <div className="truncate font-bold" title={pod.image}>
-                          {pod.image}
-                        </div>
-
-                        {pod.linked_configs &&
-                          pod.linked_configs.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5 items-center">
-                              {pod.linked_configs.map(
-                                (configStr: string, idx: number) => {
-                                  const isSecret =
-                                    configStr.startsWith("secret:");
-                                  const typeLabel = isSecret
-                                    ? "secret"
-                                    : "configmap";
-                                  const cleanName = configStr.replace(
-                                    /^(secret:|cm:)/,
-                                    "",
-                                  );
-
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() =>
-                                        handleConfigBadgeClick(
-                                          typeLabel,
-                                          cleanName,
-                                          pod.namespace,
-                                        )
-                                      }
-                                      title={`Click to preview keys inside ${cleanName}`}
-                                      className={`text-[9px] px-1.5 py-0.5 rounded-md 
-                                        font-sans font-bold flex items-center gap-1 tracking-wide 
-                                        shadow-2xs border transition-all transform 
-                                        hover:scale-105 active:scale-95 cursor-pointer ${
-                                          isSecret
-                                            ? "bg-red-500/10 text-red-800 border-red-500/20 hover:bg-red-500/20"
-                                            : "bg-blue-500/10 text-blue-800 border-blue-500/20 hover:bg-blue-500/20"
-                                        }`}
-                                    >
-                                      <span>{isSecret ? "🔒" : "⚙️"}</span>
-                                      <span className="truncate max-w-[100px]">
-                                        {cleanName}
-                                      </span>
-                                    </button>
-                                  );
-                                },
-                              )}
-                            </div>
-                          )}
-                      </td>
-                      <td className="p-4 text-center text-slate-500 font-medium">
-                        {formatPodAge(pod.age_seconds)}
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => {
-                              setConfigEditPod(pod);
-                              setEditConfigName("");
-                              setEditConfigType("");
-                              setEditMappings([{ sourceKey: "", envKey: "" }]);
-                            }}
-                            className="px-2 py-1 text-[10px] font-bold 
-                                text-blue-800 hover:text-white bg-blue-500/10 \
-                                hover:bg-blue-600 border border-blue-500/20 \
-                                rounded-md transition-all cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => setLogPod(pod)}
-                            className="px-2 py-1 text-[10px] font-bold 
-                              text-amber-800 hover:text-white bg-amber-500/10 \
-                              hover:bg-amber-600 border border-amber-500/20 \
-                              rounded-md transition-all cursor-pointer"
-                          >
-                            Logs
-                          </button>
-                          <button
-                            onClick={() => setSshPod(pod)}
-                            className="px-2 py-1 text-[10px] font-bold 
-                              text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 \
-                              hover:bg-[#306D29] border border-[#306D29]/20 \
-                              rounded-md transition-all cursor-pointer"
-                          >
-                            Terminal
-                          </button>
-                          <button
-                            onClick={() =>
-                              onTriggerRestartClick(pod.namespace, pod.name)
-                            }
-                            disabled={isRestarting === pod.name}
-                            title="Trigger Restart"
-                            className="p-1.5 rounded-lg border border-[#E7E1B1] bg-white text-[#306D29] 
-                              hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
-                              disabled:opacity-40 shadow-sm flex items-center justify-center"
-                          >
-                            {isRestarting === pod.name ? (
-                              <svg
-                                className="animate-spin h-3.5 w-3.5 text-[#0D530E]"
-                                fill="none"
-                                viewBox="0 0 24 24"
+                      >
+                        <td className="p-4 font-bold text-[#0D530E] whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span>{pod.name}</span>
+                            {isSystemCore && (
+                              <span
+                                className="text-[8px] uppercase tracking-wider 
+                                  font-extrabold px-1.5 py-0.5 rounded bg-amber-600/10 
+                                  text-amber-800 border border-amber-600/20 shadow-sm"
                               >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="4"
-                                />
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="h-3.5 w-3.5"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={2.5}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                                />
-                              </svg>
+                                Core
+                              </span>
                             )}
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleDeletePod(pod.namespace, pod.name)
-                            }
-                            disabled={deletingPod === pod.name}
-                            className="px-2.5 py-1 text-[10px] font-bold 
-                              text-red-700 hover:text-white bg-red-600/10 \
-                              hover:bg-red-600 border border-red-600/20 rounded-md \
-                              transition-all cursor-pointer disabled:opacity-40"
+                          </div>
+                        </td>
+                        <td className="p-4 text-slate-600 whitespace-nowrap">
+                          {pod.namespace}
+                        </td>
+                        <td className="p-4 whitespace-nowrap">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] 
+                          font-bold tracking-wide uppercase ${
+                            pod.status === "Running"
+                              ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
+                              : pod.status === "Pending"
+                                ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
+                                : "bg-red-600/10 text-red-700 border border-red-600/20"
+                          }`}
                           >
-                            {deletingPod === pod.name ? "Killing..." : "Delete"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                            {pod.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-[#306D29] font-medium max-w-[280px]">
+                          <div className="truncate font-bold" title={pod.image}>
+                            {pod.image}
+                          </div>
+
+                          {pod.linked_configs &&
+                            pod.linked_configs.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                                {pod.linked_configs.map(
+                                  (configStr: string, idx: number) => {
+                                    const isSecret =
+                                      configStr.startsWith("secret:");
+                                    const typeLabel = isSecret
+                                      ? "secret"
+                                      : "configmap";
+                                    const cleanName = configStr.replace(
+                                      /^(secret:|cm:)/,
+                                      "",
+                                    );
+
+                                    return (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() =>
+                                          handleConfigBadgeClick(
+                                            typeLabel,
+                                            cleanName,
+                                            pod.namespace,
+                                          )
+                                        }
+                                        className={`text-[9px] px-1.5 py-0.5 rounded-md 
+                                          font-sans font-bold flex items-center gap-1 tracking-wide 
+                                          shadow-2xs border transition-all transform 
+                                          hover:scale-105 active:scale-95 cursor-pointer ${
+                                            isSecret
+                                              ? "bg-red-500/10 text-red-800 border-red-500/20 hover:bg-red-500/20"
+                                              : "bg-blue-500/10 text-blue-800 border-blue-500/20 hover:bg-blue-500/20"
+                                          }`}
+                                      >
+                                        <span className="flex items-center text-[10px]">
+                                          {isSecret ? (
+                                            <LockIcon fontSize="inherit" />
+                                          ) : (
+                                            <SettingsIcon fontSize="inherit" />
+                                          )}
+                                        </span>
+                                        <span className="truncate max-w-[90px]">
+                                          {cleanName}
+                                        </span>
+                                      </button>
+                                    );
+                                  },
+                                )}
+                              </div>
+                            )}
+                        </td>
+                        <td className="p-4 text-center text-slate-500 font-medium whitespace-nowrap px-6">
+                          {formatPodAge(pod.age_seconds)}
+                        </td>
+                        <td className="p-4 text-center whitespace-nowrap px-4">
+                          <div className="flex justify-center items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setConfigEditPod(pod);
+                                setEditConfigName("");
+                                setEditConfigType("");
+                                setEditMappings([
+                                  { sourceKey: "", envKey: "" },
+                                ]);
+                              }}
+                              className="px-2 py-0.5 text-[9px] font-bold 
+                                  text-blue-800 hover:text-white bg-blue-500/10 
+                                  hover:bg-blue-600 border border-blue-500/20 
+                                  rounded transition-all cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setLogPod(pod)}
+                              className="px-2 py-0.5 text-[9px] font-bold 
+                                text-amber-800 hover:text-white bg-amber-500/10 
+                                hover:bg-amber-600 border border-amber-500/20 
+                                rounded transition-all cursor-pointer"
+                            >
+                              Logs
+                            </button>
+                            <button
+                              onClick={() => setSshPod(pod)}
+                              className="px-2 py-0.5 text-[9px] font-bold 
+                                text-[#0D530E] hover:text-[#FBF5DD] bg-[#306D29]/10 
+                                hover:bg-[#306D29] border border-[#306D29]/20 
+                                rounded transition-all cursor-pointer"
+                            >
+                              Term
+                            </button>
+                            <button
+                              onClick={() =>
+                                onTriggerRestartClick(pod.namespace, pod.name)
+                              }
+                              disabled={isRestarting === pod.name}
+                              title="Trigger Restart"
+                              className="p-1 rounded border border-[#E7E1B1] bg-white text-[#306D29] 
+                                hover:bg-[#FBF5DD] hover:text-[#0D530E] transition-all cursor-pointer 
+                                disabled:opacity-40 shadow-sm flex items-center justify-center shrink-0"
+                            >
+                              {isRestarting === pod.name ? (
+                                <svg
+                                  className="animate-spin h-3 w-3 text-[#0D530E]"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="h-3 w-3"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                  strokeWidth={2.5}
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                  />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeletePod(pod.namespace, pod.name)
+                              }
+                              disabled={deletingPod === pod.name}
+                              className="px-2 py-0.5 text-[9px] font-bold 
+                                text-red-700 hover:text-white bg-red-600/10 
+                                hover:bg-red-600 border border-red-600/20 rounded 
+                                transition-all cursor-pointer disabled:opacity-40"
+                            >
+                              {deletingPod === pod.name ? "Kill" : "Del"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+
         {totalRows > 0 && (
-          <div className="bg-[#E7E1B1]/10 px-5 py-3.5 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none">
+          <div className="bg-[#E7E1B1]/10 px-5 py-3 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none mt-auto">
             <div>
               Showing{" "}
               <span className="font-bold text-[#0D530E]">
@@ -395,6 +421,7 @@ export default function ClusterPodsTable({
               of <span className="font-bold text-[#0D530E]">{totalRows}</span>{" "}
               active pods
             </div>
+
             <div className="flex items-center gap-1.5">
               <div className="px-3 py-1 bg-[#E7E1B1]/30 border border-[#E7E1B1] rounded font-bold text-[#0D530E]">
                 PAGE {sanitizedPage} OF {totalPages}
@@ -402,23 +429,25 @@ export default function ClusterPodsTable({
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={sanitizedPage === 1}
-                className="px-2.5 py-1 rounded border border-[#E7E1B1] 
+                className="inline-flex items-center justify-center px-2 py-1 rounded border border-[#E7E1B1] 
                     bg-white text-[#306D29] font-bold hover:bg-[#0D530E] 
                     hover:text-[#FBF5DD] transition-all disabled:opacity-30 
-                    disabled:pointer-events-none cursor-pointer"
+                    disabled:pointer-events-none cursor-pointer h-7"
               >
-                <KeyboardArrowLeftIcon fontSize="small" /> PREV
+                <KeyboardArrowLeftIcon fontSize="small" className="mr-0.5" />{" "}
+                PREV
               </button>
               <button
                 onClick={() =>
                   setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                 }
                 disabled={sanitizedPage === totalPages}
-                className="px-2.5 py-1 rounded border border-[#E7E1B1] bg-white 
+                className="inline-flex items-center justify-center px-2 py-1 rounded border border-[#E7E1B1] bg-white 
                   text-[#306D29] font-bold hover:bg-[#0D530E] hover:text-[#FBF5DD] 
-                  transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                  transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer h-7"
               >
-                NEXT <KeyboardArrowRightIcon fontSize="small" />
+                NEXT{" "}
+                <KeyboardArrowRightIcon fontSize="small" className="ml-0.5" />
               </button>
             </div>
           </div>
