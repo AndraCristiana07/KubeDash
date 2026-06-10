@@ -89,11 +89,11 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
 
   const renderSortIndicator = (key: SortKey) => {
     if (sortKey !== key)
-      return <span className="text-slate-400/40 ml-1 select-none">⇅</span>;
+      return <span className="text-slate-400/40 ml-1 select-none">⬆⬇</span>;
     return sortOrder === "asc" ? (
-      <span className="text-white ml-1 font-bold">▲</span>
+      <span className="text-white ml-1 font-bold">⬆</span>
     ) : (
-      <span className="text-white ml-1 font-bold">▼</span>
+      <span className="text-white ml-1 font-bold">⬇</span>
     );
   };
 
@@ -325,8 +325,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
 
         <div className="overflow-x-auto">
           {activeSubTab === "usage" ? (
-            // TODO: do smth about longer names rearranging columns
-            <table className="w-full text-left border-collapse font-mono">
+            <table className="w-full text-left border-collapse font-mono table-fixed">
               <thead>
                 <tr className="bg-[#0D530E] text-[#FBF5DD] text-[11px] font-bold tracking-wider border-b border-[#306D29]/20 uppercase select-none">
                   <th
@@ -423,7 +422,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
             </table>
           ) : (
             /* historical sparklines */
-            <table className="w-full text-left border-collapse font-mono">
+            <table className="w-full text-left border-collapse font-mono table-fixed">
               <thead>
                 <tr className="bg-[#53370D] text-[#FBF5DD] text-[11px] font-bold tracking-wider border-b border-[#6D4929]/20 uppercase select-none">
                   <th
