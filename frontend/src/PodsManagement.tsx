@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
@@ -6,6 +6,7 @@ import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import LockIcon from "@mui/icons-material/Lock";
 import SettingsIcon from "@mui/icons-material/Settings";
+import SearchIcon from "@mui/icons-material/Search";
 
 interface PodEntry {
   name: string;
@@ -63,8 +64,26 @@ export default function ClusterPodsTable({
   const [sortKey, setSortKey] = useState<PodSortKey>("name");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      All: clusterPods.length,
+      Running: 0,
+      Pending: 0,
+      Failed: 0,
+    };
+    clusterPods.forEach((pod) => {
+      if (pod.status === "Running") counts.Running++;
+      else if (pod.status === "Pending") counts.Pending++;
+      else counts.Failed++; // catches CrashLoopBackOff, Evicted, Error
+    });
+    return counts;
+  }, [clusterPods]);
 
   const handleSortRequest = (key: PodSortKey) => {
     if (sortKey === key) {
@@ -90,7 +109,27 @@ export default function ClusterPodsTable({
     );
   };
 
-  const sortedPods = [...clusterPods].sort((a, b) => {
+  const filteredPods = useMemo(() => {
+    return clusterPods.filter((pod) => {
+      const cleanQuery = searchQuery.toLowerCase().trim();
+
+      const matchesSearch =
+        pod.name.toLowerCase().includes(cleanQuery) ||
+        pod.namespace.toLowerCase().includes(cleanQuery) ||
+        pod.image.toLowerCase().includes(cleanQuery);
+
+      const matchesStatus =
+        statusFilter === "All" ||
+        (statusFilter === "Failed" &&
+          pod.status !== "Running" &&
+          pod.status !== "Pending") ||
+        pod.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [clusterPods, searchQuery, statusFilter]);
+
+  const sortedPods = [...filteredPods].sort((a, b) => {
     const aVal = a[sortKey];
     const bVal = b[sortKey];
 
@@ -113,8 +152,8 @@ export default function ClusterPodsTable({
   const currentPodsRows = sortedPods.slice(indexOfFirstRow, indexOfLastRow);
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="w-full max-w-4xl mx-auto space-y-4">
+      <div className="flex justify-between items-center w-full">
         <div>
           <h2 className="text-lg font-black text-[#0D530E]">
             Active Cluster Pods
@@ -127,10 +166,78 @@ export default function ClusterPodsTable({
           onClick={() => setIsModalOpen(true)}
           className="px-3 py-1.5 text-xs font-bold bg-[#306D29] 
             text-[#FBF5DD] hover:bg-[#0D530E] rounded-lg text-white 
-            transition-all cursor-pointer shadow"
+            transition-all cursor-pointer shadow shrink-0"
         >
           + Deploy New Pod
         </button>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between bg-[#E7E1B1]/10 border border-[#E7E1B1]/60 p-3 rounded-xl shadow-2xs w-full">
+        {/* filter bar */}
+        <div className="relative flex-1 max-w-md flex items-center">
+          <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
+            <SearchIcon fontSize="small" />
+          </span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1); // go to first page when typing a filter
+            }}
+            placeholder="Search by pod name, image tag or scope namespace..."
+            className="w-full pl-9 pr-4 py-1.5 bg-white border border-[#E7E1B1] rounded-lg text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-[#306D29] focus:border-[#306D29] transition-all shadow-2xs"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 text-slate-400 hover:text-slate-600 text-xs font-sans font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* pill to select specific pods over status  */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          {(["All", "Running", "Pending", "Failed"] as const).map((type) => {
+            const isActive = statusFilter === type;
+            const count = statusCounts[type];
+
+            const badgeThemes = {
+              All: isActive
+                ? "bg-[#0D530E] text-white border-[#0D530E]"
+                : "bg-white text-slate-600 border-[#E7E1B1] hover:bg-[#E7E1B1]/20",
+              Running: isActive
+                ? "bg-[#0D530E] text-white border-[#0D530E]"
+                : "bg-[#0D530E]/5 text-[#0D530E] border-[#0D530E]/20 hover:bg-[#0D530E]/10",
+              Pending: isActive
+                ? "bg-amber-600 text-white border-amber-600"
+                : "bg-amber-600/5 text-amber-700 border-amber-600/20 hover:bg-amber-600/10",
+              Failed: isActive
+                ? "bg-red-600 text-white border-red-600"
+                : "bg-red-600/5 text-red-700 border-red-600/20 hover:bg-red-600/10",
+            };
+
+            return (
+              <button
+                key={type}
+                onClick={() => {
+                  setStatusFilter(type);
+                  setCurrentPage(1); // go to first page when switching filters
+                }}
+                className={`px-2.5 py-1 text-[10px] font-bold font-mono tracking-wide uppercase rounded-md border shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${badgeThemes[type]}`}
+              >
+                <span>{type}</span>
+                <span
+                  className={`text-[9px] px-1 rounded-sm ${isActive ? "bg-white/20 text-white" : "bg-slate-700/5 text-slate-500 font-bold"}`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div
@@ -202,13 +309,21 @@ export default function ClusterPodsTable({
                 ) : (
                   currentPodsRows.map((pod) => {
                     const isSystemCore = pod.name.includes("kubedash-");
+
+                    const isFailing =
+                      pod.status === "Failed" ||
+                      pod.status.toLowerCase().includes("backoff") ||
+                      pod.status.toLowerCase().includes("err");
+
                     return (
                       <tr
                         key={`${pod.namespace}/${pod.name}`}
                         className={`transition-colors border-b border-[#E7E1B1]/10 ${
-                          isSystemCore
-                            ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
-                            : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
+                          isFailing
+                            ? "bg-red-500/10 hover:bg-red-500/15 border-l-4 border-l-red-600 animate-pulse" // Subtle attention-grab pulse
+                            : isSystemCore
+                              ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                              : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
                         }`}
                       >
                         <td className="p-4 font-bold text-[#0D530E] whitespace-nowrap">
@@ -273,14 +388,11 @@ export default function ClusterPodsTable({
                                             pod.namespace,
                                           )
                                         }
-                                        className={`text-[9px] px-1.5 py-0.5 rounded-md 
-                                          font-sans font-bold flex items-center gap-1 tracking-wide 
-                                          shadow-2xs border transition-all transform 
-                                          hover:scale-105 active:scale-95 cursor-pointer ${
-                                            isSecret
-                                              ? "bg-red-500/10 text-red-800 border-red-500/20 hover:bg-red-500/20"
-                                              : "bg-blue-500/10 text-blue-800 border-blue-500/20 hover:bg-blue-500/20"
-                                          }`}
+                                        className={`text-[9px] px-1.5 py-0.5 rounded-md font-sans font-bold flex items-center gap-1 tracking-wide shadow-2xs border transition-all transform hover:scale-105 active:scale-95 cursor-pointer ${
+                                          isSecret
+                                            ? "bg-red-500/10 text-red-800 border-red-500/20 hover:bg-red-500/20"
+                                            : "bg-blue-500/10 text-blue-800 border-blue-500/20 hover:bg-blue-500/20"
+                                        }`}
                                       >
                                         <span className="flex items-center text-[10px]">
                                           {isSecret ? (

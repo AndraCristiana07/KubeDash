@@ -5,7 +5,9 @@ import AuditLogView from "./AuditLogs";
 import { SettingsPanel } from "./SettingsPanel";
 import ClusterMetricsDashboard from "./ClusterMetricsDashboard";
 import ClusterPodsTable from "./PodsManagement";
-import toast, { Toaster } from "react-hot-toast";
+import toast, { Toaster, useToasterStore } from "react-hot-toast";
+import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
+import WarningIcon from "@mui/icons-material/Warning";
 
 // TODO: everywhere where the system core pods show, put them in a diff color
 interface ClusterLog {
@@ -180,6 +182,19 @@ export default function App() {
       fetchClusterConfigsForDeployment();
     }
   }, [isModalOpen, configEditPod, targetNamespace, GO_API]);
+
+  const { toasts } = useToasterStore();
+
+  // for toaster limits
+  useEffect(() => {
+    const TOAST_LIMIT = 4;
+    if (toasts.length > TOAST_LIMIT) {
+      toasts
+        .filter((t) => t.visible) // look at active onscreen alerts
+        .filter((_, idx) => idx >= TOAST_LIMIT) // grab any that overflow the boundary limit
+        .forEach((t) => toast.dismiss(t.id)); // evict them from the queue
+    }
+  }, [toasts]);
 
   const handleDeletePod = async (namespace: string, name: string) => {
     if (!window.confirm(`Are you sure you want to terminate pod "${name}"?`))
@@ -373,7 +388,7 @@ export default function App() {
 
     if (isCoreInfrastructure) {
       const confirmationPrompt = window.confirm(
-        `⚠️ WARNING: You are attempting to restart a core dashboard component ("${podName}").\n\n` +
+        `WARNING: You are attempting to restart a core dashboard component ("${podName}").\n\n` +
           `This action will momentarily disconnect your dashboard, drop active log streams, and interrupt live monitoring sessions.\n\n` +
           `Are you absolutely sure you want to proceed?`,
       );
@@ -474,9 +489,9 @@ export default function App() {
     };
 
     ws.onmessage = (event) => {
-      console.log("Received event hunk data payload:", event.data);
       try {
         const clusterEvent = JSON.parse(event.data);
+
         if (clusterEvent.type === "metrics_telemetry" && clusterEvent.data) {
           const payload = clusterEvent.data;
           const key = `${payload.namespace}/${payload.pod_name}`;
@@ -492,10 +507,10 @@ export default function App() {
               last_updated: Date.now(),
             },
           }));
-          return; // event resolved, break out early
+          return;
         }
 
-        if (!clusterEvent.message) return;
+        if (!clusterEvent.message || clusterEvent.message.trim() === "") return;
 
         const msgText = clusterEvent.message;
         const namespaceText = clusterEvent.namespace || "default";
@@ -506,7 +521,8 @@ export default function App() {
         const isErrorMsg =
           msgText.toLowerCase().includes("fail") ||
           msgText.toLowerCase().includes("backoff") ||
-          msgText.toLowerCase().includes("err");
+          msgText.toLowerCase().includes("err") ||
+          msgText.toLowerCase().includes("nonexistent");
 
         if (isWarning || isErrorMsg) {
           toast.custom(
@@ -520,13 +536,17 @@ export default function App() {
                 border-l-4 border-l-red-600`}
               >
                 <div className="flex-1">
-                  <p className="text-xs font-mono font-bold text-red-800">
-                    ⚠️ CLUSTER WARNING ({namespaceText})
+                  <p className="text-xs font-mono font-bold text-red-800 flex items-center gap-1">
+                    <WarningIcon
+                      fontSize="inherit"
+                      className="text-[#FFDA03]"
+                    />{" "}
+                    CLUSTER WARNING ({namespaceText})
                   </p>
                   <p className="text-xs text-[#0D530E] mt-1 font-semibold">
                     Pod: {podText}
                   </p>
-                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3">
+                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3 font-mono leading-relaxed">
                     {msgText}
                   </p>
                 </div>
@@ -537,7 +557,7 @@ export default function App() {
                     toast.remove(t.id);
                   }}
                   className="text-[#306D29]/50 hover:text-[#0D530E] 
-                  p-0.5 rounded transition-colors focus:outline-none 
+                  p-0.5 rounded transition-colors focus:outline-hidden 
                   cursor-pointer flex-shrink-0"
                   aria-label="Close alert"
                 >
@@ -557,8 +577,29 @@ export default function App() {
                 </button>
               </div>
             ),
-            { duration: 6000, id: `toast-${podText}` },
+            {
+              duration: 7000,
+              id: `toast-${podText}`,
+            },
           );
+
+          setDbLogs((prev: ClusterLog[]) => {
+            const logExists = prev.some(
+              (l) => l.message === msgText && l.pod_name === podText,
+            );
+            if (logExists) return prev;
+
+            const newLog: ClusterLog = {
+              ID: Date.now(),
+              namespace: namespaceText,
+              pod_name: podText,
+              message: msgText,
+              level: "Warning",
+              CreatedAt: new Date().toISOString(),
+            };
+
+            return [newLog, ...prev];
+          });
         }
       } catch (err) {
         console.error("Failed parsing incoming alert package:", err);
@@ -688,7 +729,10 @@ export default function App() {
                     status === "Healthy" ? "text-[#5BB450]" : "text-[#B32626]"
                   }`}
                 >
-                  <span className="animate-pulse">●</span> {status}
+                  <span className="animate-pulse">
+                    <FiberManualRecordIcon fontSize="inherit" />
+                  </span>{" "}
+                  {status}
                 </div>
               </div>
 
@@ -1195,7 +1239,6 @@ export default function App() {
             </div>
 
             <div className="space-y-3">
-              {/* Choose Resource Block */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Select Target Cluster Resource
@@ -1242,7 +1285,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Dynamic Mapping Matrix */}
               {editConfigName && (
                 <div className="space-y-2 pt-2 border-t border-[#E7E1B1]/40">
                   <div className="flex justify-between items-center">
@@ -1337,7 +1379,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Form Actions */}
+            {/* form actions */}
             <div className="flex justify-end gap-2 pt-2 border-t border-[#E7E1B1]/40">
               <button
                 type="button"
