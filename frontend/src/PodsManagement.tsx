@@ -28,6 +28,7 @@ interface ClusterPodsTableProps {
   setLogPod: (pod: PodEntry) => void;
   setSshPod: (pod: PodEntry) => void;
   handleDeletePod: (namespace: string, name: string) => void;
+  handleManualRefresh: () => void;
   onTriggerRestartClick: (namespace: string, name: string) => void;
   handleConfigBadgeClick: (
     typeLabel: "secret" | "configmap",
@@ -41,6 +42,8 @@ interface ClusterPodsTableProps {
     mappings: Array<{ sourceKey: string; envKey: string }>,
   ) => void;
   formatPodAge: (seconds: number) => string;
+  toast: any;
+  GO_API: string;
 }
 
 type PodSortKey = "name" | "namespace" | "status" | "image" | "age_seconds";
@@ -62,6 +65,9 @@ export default function ClusterPodsTable({
   setEditConfigType,
   setEditMappings,
   formatPodAge,
+  handleManualRefresh,
+  GO_API,
+  toast,
 }: ClusterPodsTableProps) {
   const [sortKey, setSortKey] = useState<PodSortKey>("name");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
@@ -71,6 +77,9 @@ export default function ClusterPodsTable({
 
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
+
+  const [selectedPods, setSelectedPods] = useState<string[]>([]);
+  const [isBulkExecuting, setIsBulkExecuting] = useState<boolean>(false);
 
   const statusCounts = useMemo(() => {
     const counts = {
@@ -95,6 +104,66 @@ export default function ClusterPodsTable({
       setSortOrder(key === "age_seconds" ? "desc" : "asc");
     }
     setCurrentPage(1);
+  };
+
+  const handleBulkRestart = async () => {
+    if (selectedPods.length === 0) return;
+
+    const confirmBounce = window.confirm(
+      `Are you absolutely sure you want to trigger rolling restarts across these ${selectedPods.length} pods?`,
+    );
+    if (!confirmBounce) return;
+
+    setIsBulkExecuting(true);
+    toast.loading(`Restarting ${selectedPods.length} workloads...`, {
+      id: "bulk-op",
+    });
+
+    // loop through selections and use parent function
+    for (const compoundKey of selectedPods) {
+      const [ns, name] = compoundKey.split("/");
+      try {
+        await onTriggerRestartClick(ns, name);
+      } catch (err) {
+        console.error(`Failed to bulk restart ${name}:`, err);
+      }
+    }
+
+    setIsBulkExecuting(false);
+    setSelectedPods([]); // clear selected list
+    toast.success(`Successfully signaled orchestration cycles for pods!`, {
+      id: "bulk-op",
+    });
+    handleManualRefresh();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPods.length === 0) return;
+
+    const confirmKill = window.confirm(
+      `DANGER: You are about to instantly delete ${selectedPods.length} pods from the cluster simultaneously. Proceed?`,
+    );
+    if (!confirmKill) return;
+
+    setIsBulkExecuting(true);
+    toast.loading(`Deleting ${selectedPods.length} workloads...`, {
+      id: "bulk-op",
+    });
+
+    // loop through selections and use parent function
+    for (const compoundKey of selectedPods) {
+      const [ns, name] = compoundKey.split("/");
+      try {
+        await handleDeletePod(ns, name);
+      } catch (err) {
+        console.error(`Failed to bulk delete ${name}:`, err);
+      }
+    }
+
+    setIsBulkExecuting(false);
+    setSelectedPods([]); // clear selected list
+    toast.success(`Eviction signal executed successfully!`, { id: "bulk-op" });
+    handleManualRefresh();
   };
 
   const renderSortIndicator = (key: PodSortKey) => {
@@ -255,6 +324,37 @@ export default function ClusterPodsTable({
                       text-[#0D530E] font-bold tracking-wider uppercase text-[10px]
                       sticky top-0 z-10 select-none"
                 >
+                  <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        currentPodsRows.length > 0 &&
+                        currentPodsRows.every((p) =>
+                          selectedPods.includes(`${p.namespace}/${p.name}`),
+                        )
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // select all visible rows on the current page
+                          const pageKeys = currentPodsRows.map(
+                            (p) => `${p.namespace}/${p.name}`,
+                          );
+                          setSelectedPods((prev) =>
+                            Array.from(new Set([...prev, ...pageKeys])),
+                          );
+                        } else {
+                          // uncheck all visible rows on the current page
+                          const pageKeys = currentPodsRows.map(
+                            (p) => `${p.namespace}/${p.name}`,
+                          );
+                          setSelectedPods((prev) =>
+                            prev.filter((key) => !pageKeys.includes(key)),
+                          );
+                        }
+                      }}
+                      className="rounded border-[#E7E1B1] text-[#306D29] focus:ring-[#306D29] h-3.5 w-3.5 accent-[#306D29] cursor-pointer"
+                    />
+                  </th>
                   <th
                     onClick={() => handleSortRequest("name")}
                     className="p-4 cursor-pointer hover:bg-[#E7E1B1]/80 transition-colors"
@@ -319,17 +419,38 @@ export default function ClusterPodsTable({
                       (pod.message &&
                         pod.message.toLowerCase().includes("err"));
 
+                    const podKey = `${pod.namespace}/${pod.name}`;
+                    const isChecked = selectedPods.includes(podKey);
+
                     return (
                       <tr
                         key={`${pod.namespace}/${pod.name}`}
                         className={`transition-colors border-b border-[#E7E1B1]/10 ${
-                          isFailing
-                            ? "bg-red-500/[0.08] hover:bg-red-500/[0.15] border-l-4 border-l-red-600 animate-pulse hover:animate-none"
-                            : isSystemCore
-                              ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
-                              : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
+                          isChecked
+                            ? "bg-[#306D29]/10 hover:bg-[#306D29]/15 border-l-4 border-l-[#306D29]"
+                            : isFailing
+                              ? "bg-red-500/[0.08] hover:bg-red-500/[0.15] border-l-4 border-l-red-600 animate-pulse hover:animate-none"
+                              : isSystemCore
+                                ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                                : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
                         }`}
                       >
+                        <td className="p-4 text-center whitespace-nowrap w-10">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPods((prev) => [...prev, podKey]);
+                              } else {
+                                setSelectedPods((prev) =>
+                                  prev.filter((k) => k !== podKey),
+                                );
+                              }
+                            }}
+                            className="rounded border-[#E7E1B1] text-[#306D29] focus:ring-[#306D29] h-3.5 w-3.5 accent-[#306D29] cursor-pointer"
+                          />
+                        </td>
                         <td className="p-4 font-bold text-[#0D530E] whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <span>{pod.name}</span>
@@ -580,6 +701,51 @@ export default function ClusterPodsTable({
             </div>
           </div>
         )}
+      </div>
+      {/* bulk ops */}
+      <div
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0D530E] border-2 border-[#306D29] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 transform transition-all duration-300 font-mono text-xs ${
+          selectedPods.length > 0
+            ? "translate-y-0 opacity-100 scale-100"
+            : "translate-y-20 opacity-0 scale-95 pointer-events-none"
+        }`}
+      >
+        <div className="text-[#FBF5DD] flex items-center gap-2">
+          <span className="bg-white/20 px-2 py-0.5 rounded text-[11px] font-black animate-pulse">
+            {selectedPods.length}
+          </span>
+          <span className="font-bold tracking-wide uppercase text-[10px]">
+            Workloads Staged
+          </span>
+        </div>
+
+        <div className="h-4 w-px bg-white/20" />
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleBulkRestart}
+            disabled={isBulkExecuting}
+            className="px-3 py-1.5 bg-[#306D29] text-[#FBF5DD] font-bold rounded-lg border border-[#306D29] hover:bg-[#0D530E] hover:border-white/30 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+          >
+            Bulk Restart
+          </button>
+
+          <button
+            onClick={handleBulkDelete}
+            disabled={isBulkExecuting}
+            className="px-3 py-1.5 bg-red-600 text-white font-black rounded-lg border border-red-700 hover:bg-red-700 transition-all active:scale-95 cursor-pointer disabled:opacity-50 shadow-md"
+          >
+            Mass Delete
+          </button>
+
+          <button
+            onClick={() => setSelectedPods([])}
+            disabled={isBulkExecuting}
+            className="px-2.5 py-1.5 text-white/60 hover:text-white transition-colors cursor-pointer font-sans text-[11px] font-semibold"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

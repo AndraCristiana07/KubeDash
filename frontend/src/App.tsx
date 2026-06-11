@@ -10,6 +10,7 @@ import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
 import WarningIcon from "@mui/icons-material/Warning";
 
 // TODO: everywhere where the system core pods show, put them in a diff color
+// TODO: add toast for successfully deploying a pod
 interface ClusterLog {
   ID: number;
   pod_name: string;
@@ -876,6 +877,9 @@ export default function App() {
             setEditConfigType={setEditConfigType}
             setEditMappings={setEditMappings}
             formatPodAge={formatPodAge}
+            handleManualRefresh={handleManualRefresh}
+            GO_API={GO_API}
+            toast={toast}
           />
         ) : activeTab == "audit" ? (
           <AuditLogView goApiUrl={GO_API} activeNamespace={targetNamespace} />

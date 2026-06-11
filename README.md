@@ -44,19 +44,27 @@ kubectl apply -f k8s/deployment.yaml
 kubectl get pods -A
 ```
 
-5. Access the dashboard (port forwarding):
+5. Deploy metrics server manifest and patch it for kind:
+
+```sh
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl patch -n kube-system deployment metrics-server --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+6. Access the dashboard (port forwarding):
 
 ```sh
 kubectl port-forward svc/postgres-service 5432:5432
 ```
 
-6. In another terminal, run the backend:
+7. In another terminal, run the backend:
 
 ```sh
 cd backend && go run main.go
 ```
 
-7. Open another terminal to run the frontend
+8. Open another terminal to run the frontend
 
 ```sh
 cd frontend && npm start
