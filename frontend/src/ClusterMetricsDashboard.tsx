@@ -5,6 +5,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
+import SearchIcon from "@mui/icons-material/Search";
 
 interface PodMetricRow {
   pod_name: string;
@@ -321,15 +322,28 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               ? "Live Hardware Compute Monitor"
               : "Timeline Velocity Vector Matrices"}
           </div>
-          {/* TODO: put search icon  */}
-
-          <input
-            type="text"
-            placeholder="Filter nodes by pod/namespace..."
-            value={filterText}
-            onChange={handleFilterChange}
-            className="px-3 py-1.5 text-xs bg-white text-slate-800 placeholder-slate-400 rounded-md border border-[#E7E1B1] focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
-          />
+          <div className="relative w-full sm:w-72 flex items-center">
+            <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
+              <SearchIcon fontSize="small" />
+            </span>
+            <input
+              type="text"
+              placeholder="Filter nodes by pod/namespace..."
+              value={filterText}
+              onChange={handleFilterChange}
+              className="w-full pl-9 pr-4 py-1.5 bg-white border border-[#E7E1B1] rounded-lg text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-[#306D29] focus:border-[#306D29] transition-all shadow-2xs"
+            />
+            {filterText && (
+              <button
+                onClick={() =>
+                  handleFilterChange({ target: { value: "" } } as any)
+                }
+                className="absolute right-2.5 text-slate-400 hover:text-slate-600 text-xs font-sans font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">

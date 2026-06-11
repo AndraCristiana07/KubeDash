@@ -87,20 +87,18 @@ export default function AuditLogView({
         </div>
 
         {/* filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* search input */}
-          <div className="relative">
-            {/* TODO: put search icon  */}
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between bg-[#E7E1B1]/10 border border-[#E7E1B1]/60 p-3 rounded-xl shadow-2xs w-full">
+          <div className="relative flex-1 max-w-md flex items-center">
+            <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
+              <SearchIcon fontSize="small" />
+            </span>
             <input
               type="text"
               placeholder="Search message or pod..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && fetchAuditHistory()}
-              className="px-3 py-1.5 text-xs bg-white/80 border 
-                border-[#E7E1B1] rounded-lg text-[#0D530E] 
-                placeholder-[#306D29]/50 focus:outline-none focus:border-[#306D29] 
-                w-52 font-medium shadow-inner"
+              className="w-full pl-9 pr-4 py-1.5 bg-white border border-[#E7E1B1] rounded-lg text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-[#306D29] focus:border-[#306D29] transition-all shadow-2xs"
             />
             {searchQuery && (
               <button
