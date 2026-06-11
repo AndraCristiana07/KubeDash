@@ -17,6 +17,8 @@ interface PodEntry {
   image: string;
   age_seconds: number;
   linked_configs: string[];
+  restart_count: number;
+  last_term_state?: string;
 }
 
 interface ClusterPodsTableProps {
@@ -472,18 +474,43 @@ export default function ClusterPodsTable({
                         </td>
                         <td className="p-4 whitespace-nowrap">
                           <div className="flex flex-col gap-1 items-start">
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                                pod.status === "Running"
-                                  ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
-                                  : pod.status === "Pending"
-                                    ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
-                                    : "bg-red-600/10 text-red-700 border border-red-600/20"
-                              }`}
-                            >
-                              {pod.status}
-                            </span>
-
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border ${
+                                  pod.status === "Running"
+                                    ? "bg-[#0D530E]/10 text-[#0D530E] border-[#0D530E]/20"
+                                    : pod.status === "Pending"
+                                      ? "bg-amber-600/10 text-amber-700 border-amber-600/20"
+                                      : "bg-red-600/10 text-red-700 border-red-600/20"
+                                }`}
+                              >
+                                {pod.status}
+                              </span>
+                              {pod.restart_count > 0 && (
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border ${
+                                    pod.restart_count >= 5
+                                      ? "bg-red-600 text-white border-red-700 animate-bounce"
+                                      : "bg-amber-500/20 text-amber-800 border-amber-500/30"
+                                  }`}
+                                  title={`This specific workload has crashed or cycled ${pod.restart_count} times.`}
+                                >
+                                  {pod.restart_count}{" "}
+                                  {pod.restart_count === 1
+                                    ? "Restart"
+                                    : "Restarts"}
+                                </span>
+                              )}
+                            </div>
+                            {pod.last_term_state &&
+                              pod.last_term_state !== "Completed" && (
+                                <span
+                                  className="text-[9px] font-black tracking-wider uppercase bg-rose-900 text-rose-100 border border-rose-950 px-1.5 py-0.5 rounded mt-0.5"
+                                  title="The previous instance running inside this pod was terminated by the core engine kernel handler."
+                                >
+                                  Last Crash Cause: {pod.last_term_state}
+                                </span>
+                              )}
                             {pod.message && (
                               <span
                                 className="text-[10px] font-semibold text-red-700 max-w-[200px] truncate block font-mono"

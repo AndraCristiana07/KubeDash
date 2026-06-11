@@ -56,6 +56,8 @@ type PodTableEntry struct {
 	Image         string   `json:"image"`
 	Ageseconds    int      `json:"age_seconds"`
 	LinkedConfigs []string `json:"linked_configs"`
+	RestartCount  int32    `json:"restart_count"`
+	LastTermState string   `json:"last_term_state"`
 }
 
 type PodResourceMetrics struct {
@@ -457,9 +459,17 @@ func getClusterPods(c *gin.Context) {
 	for _, pod := range pods.Items {
 		var image string = "unknown"
 		var deepMessage string = ""
+		var restartCount int32 = 0
+		var lastTermState string = ""
+
 		if len(pod.Status.ContainerStatuses) > 0 {
 			containerStatus := pod.Status.ContainerStatuses[0]
 			image = containerStatus.Image
+			restartCount = containerStatus.RestartCount
+
+			if containerStatus.LastTerminationState.Terminated != nil {
+				lastTermState = containerStatus.LastTerminationState.Terminated.Reason
+			}
 
 			if containerStatus.State.Waiting != nil {
 				deepMessage = containerStatus.State.Waiting.Reason
@@ -507,6 +517,8 @@ func getClusterPods(c *gin.Context) {
 				Image:         image,
 				Ageseconds:    int(time.Since(pod.CreationTimestamp.Time).Seconds()),
 				LinkedConfigs: linkedConfigs,
+				RestartCount:  restartCount,
+				LastTermState: lastTermState,
 			})
 	}
 	c.JSON(http.StatusOK, gin.H{

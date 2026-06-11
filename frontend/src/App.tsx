@@ -27,6 +27,8 @@ interface PodEntry {
   image: string;
   age_seconds: number;
   linked_configs: string[];
+  restart_count: number;
+  last_term_state?: string;
 }
 
 const GO_API =
