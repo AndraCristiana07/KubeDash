@@ -52,6 +52,7 @@ type PodTableEntry struct {
 	Name          string   `json:"name"`
 	Namespace     string   `json:"namespace"`
 	Status        string   `json:"status"`
+	Message       string   `json:"message"`
 	Image         string   `json:"image"`
 	Ageseconds    int      `json:"age_seconds"`
 	LinkedConfigs []string `json:"linked_configs"`
@@ -445,8 +446,19 @@ func getClusterPods(c *gin.Context) {
 	var podList []PodTableEntry
 	for _, pod := range pods.Items {
 		var image string = "unknown"
+		var deepMessage string = ""
 		if len(pod.Status.ContainerStatuses) > 0 {
-			image = pod.Status.ContainerStatuses[0].Image
+			containerStatus := pod.Status.ContainerStatuses[0]
+			image = containerStatus.Image
+
+			if containerStatus.State.Waiting != nil {
+				deepMessage = containerStatus.State.Waiting.Reason
+				if containerStatus.State.Waiting.Message != "" {
+					deepMessage = containerStatus.State.Waiting.Reason + ": " + containerStatus.State.Waiting.Message
+				}
+			} else if containerStatus.State.Terminated != nil {
+				deepMessage = containerStatus.State.Terminated.Reason
+			}
 		}
 
 		var linkedConfigs []string
@@ -481,6 +493,7 @@ func getClusterPods(c *gin.Context) {
 				Name:          pod.Name,
 				Namespace:     pod.Namespace,
 				Status:        string(pod.Status.Phase),
+				Message:       deepMessage,
 				Image:         image,
 				Ageseconds:    int(time.Since(pod.CreationTimestamp.Time).Seconds()),
 				LinkedConfigs: linkedConfigs,

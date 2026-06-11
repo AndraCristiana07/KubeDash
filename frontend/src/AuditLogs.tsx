@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import SearchIcon from "@mui/icons-material/Search";
 
 interface AuditLogEntry {
   id: number;
@@ -89,6 +90,7 @@ export default function AuditLogView({
         <div className="flex flex-wrap items-center gap-3">
           {/* search input */}
           <div className="relative">
+            {/* TODO: put search icon  */}
             <input
               type="text"
               placeholder="Search message or pod..."

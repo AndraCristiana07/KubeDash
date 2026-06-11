@@ -321,6 +321,8 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               ? "Live Hardware Compute Monitor"
               : "Timeline Velocity Vector Matrices"}
           </div>
+          {/* TODO: put search icon  */}
+
           <input
             type="text"
             placeholder="Filter nodes by pod/namespace..."

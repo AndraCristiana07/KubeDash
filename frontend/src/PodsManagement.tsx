@@ -7,11 +7,13 @@ import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import LockIcon from "@mui/icons-material/Lock";
 import SettingsIcon from "@mui/icons-material/Settings";
 import SearchIcon from "@mui/icons-material/Search";
+import WarningIcon from "@mui/icons-material/Warning";
 
 interface PodEntry {
   name: string;
   namespace: string;
   status: string;
+  message: string;
   image: string;
   age_seconds: number;
   linked_configs: string[];
@@ -309,18 +311,20 @@ export default function ClusterPodsTable({
                 ) : (
                   currentPodsRows.map((pod) => {
                     const isSystemCore = pod.name.includes("kubedash-");
-
+                    // console.log(pod.status);
                     const isFailing =
                       pod.status === "Failed" ||
-                      pod.status.toLowerCase().includes("backoff") ||
-                      pod.status.toLowerCase().includes("err");
+                      (pod.message &&
+                        pod.message.toLowerCase().includes("backoff")) ||
+                      (pod.message &&
+                        pod.message.toLowerCase().includes("err"));
 
                     return (
                       <tr
                         key={`${pod.namespace}/${pod.name}`}
                         className={`transition-colors border-b border-[#E7E1B1]/10 ${
                           isFailing
-                            ? "bg-red-500/10 hover:bg-red-500/15 border-l-4 border-l-red-600 animate-pulse" // Subtle attention-grab pulse
+                            ? "bg-red-500/[0.08] hover:bg-red-500/[0.15] border-l-4 border-l-red-600 animate-pulse hover:animate-none"
                             : isSystemCore
                               ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
                               : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
@@ -344,18 +348,29 @@ export default function ClusterPodsTable({
                           {pod.namespace}
                         </td>
                         <td className="p-4 whitespace-nowrap">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] 
-                          font-bold tracking-wide uppercase ${
-                            pod.status === "Running"
-                              ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
-                              : pod.status === "Pending"
-                                ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
-                                : "bg-red-600/10 text-red-700 border border-red-600/20"
-                          }`}
-                          >
-                            {pod.status}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                                pod.status === "Running"
+                                  ? "bg-[#0D530E]/10 text-[#0D530E] border border-[#0D530E]/20"
+                                  : pod.status === "Pending"
+                                    ? "bg-amber-600/10 text-amber-700 border border-amber-600/20"
+                                    : "bg-red-600/10 text-red-700 border border-red-600/20"
+                              }`}
+                            >
+                              {pod.status}
+                            </span>
+
+                            {pod.message && (
+                              <span
+                                className="text-[10px] font-semibold text-red-700 max-w-[200px] truncate block font-mono"
+                                title={pod.message}
+                              >
+                                <WarningIcon fontSize="inherit" />{" "}
+                                {pod.message.split(":")[0]}{" "}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-4 text-[#306D29] font-medium max-w-[280px]">
                           <div className="truncate font-bold" title={pod.image}>
@@ -434,10 +449,8 @@ export default function ClusterPodsTable({
                             </button>
                             <button
                               onClick={() => setLogPod(pod)}
-                              className="px-2 py-0.5 text-[9px] font-bold 
-                                text-amber-800 hover:text-white bg-amber-500/10 
-                                hover:bg-amber-600 border border-amber-500/20 
-                                rounded transition-all cursor-pointer"
+                              className={`px-2 py-0.5 text-[9px] font-bold rounded transition-all 
+                                cursor-pointer border ${isFailing ? "bg-amber-500 text-white border-amber-600 hover:bg-amber-600 shadow-xs scale-105" : "text-amber-800 hover:text-white bg-amber-500/10 hover:bg-amber-600 border border-amber-500/20"}`}
                             >
                               Logs
                             </button>
@@ -520,7 +533,10 @@ export default function ClusterPodsTable({
         </div>
 
         {totalRows > 0 && (
-          <div className="bg-[#E7E1B1]/10 px-5 py-3 border-t border-[#E7E1B1] flex items-center justify-between font-mono text-[11px] text-slate-600 select-none mt-auto">
+          <div
+            className="bg-[#E7E1B1]/10 px-5 py-3 border-t border-[#E7E1B1] 
+              flex items-center justify-between font-mono text-[11px] text-slate-600 select-none mt-auto"
+          >
             <div>
               Showing{" "}
               <span className="font-bold text-[#0D530E]">

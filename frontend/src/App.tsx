@@ -23,6 +23,7 @@ interface PodEntry {
   name: string;
   namespace: string;
   status: string;
+  message: string;
   image: string;
   age_seconds: number;
   linked_configs: string[];
