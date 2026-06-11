@@ -9,7 +9,6 @@ import toast, { Toaster, useToasterStore } from "react-hot-toast";
 import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
 import WarningIcon from "@mui/icons-material/Warning";
 
-// TODO: everywhere where the system core pods show, put them in a diff color
 // TODO: add toast for successfully deploying a pod
 interface ClusterLog {
   ID: number;

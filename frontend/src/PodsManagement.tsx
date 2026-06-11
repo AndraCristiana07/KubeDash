@@ -410,7 +410,9 @@ export default function ClusterPodsTable({
                   </tr>
                 ) : (
                   currentPodsRows.map((pod) => {
-                    const isSystemCore = pod.name.includes("kubedash-");
+                    const isSystemCore =
+                      pod.name.includes("kubedash-") ||
+                      pod.namespace.includes("kube-system");
                     // console.log(pod.status);
                     const isFailing =
                       pod.status === "Failed" ||

@@ -188,10 +188,17 @@ export default function AuditLogView({
             ) : (
               logs.map((log) => {
                 const isWarn = log.level === "Warning";
+                const isSystemCore =
+                  log.pod_name.includes("kubedash-") ||
+                  log.namespace.includes("kube-system");
                 return (
                   <tr
                     key={log.id}
-                    className="hover:bg-[#E7E1B1]/20 transition-colors"
+                    className={`transition-colors ${
+                      isSystemCore
+                        ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                        : "bg-[#FBF5DD]/10 hover:bg-[#E7E1B1]/20 border-l-4 border-l-transparent"
+                    }`}
                   >
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
                       <span
