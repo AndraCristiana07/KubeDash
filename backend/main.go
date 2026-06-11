@@ -147,8 +147,18 @@ func main() {
 	config.ConnectDatabase()
 
 	var err error
-	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
-	k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	k8sConfig, err = rest.InClusterConfig()
+	if err != nil {
+		// if fails -> local -> fall back to reading the local ~/.kube/config file
+		fmt.Println("Not running inside cluster, looking for local kubeconfig...")
+		kubeconfig := filepath.Join(homeDir(), ".kube", "config")
+		k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to load kubeconfig from home directory: %v", err))
+		}
+	} else {
+		fmt.Println("Successfully loaded In-Cluster Kubernetes configuration!")
+	}
 	if err != nil {
 		panic(fmt.Sprintf("Failed to load kubeconfig: %v", err))
 	}
