@@ -216,6 +216,7 @@ export default function AuditLogView({
                     <td
                       className="px-4 py-3 text-[#0D530E] font-semibold 
                         font-mono max-w-[200px] truncate"
+                      title={log.pod_name}
                     >
                       {log.pod_name || "cluster-level"}
                     </td>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import FolderIcon from "@mui/icons-material/Folder";
 
 interface SettingsPanelProps {
   GO_API: string;
@@ -447,7 +448,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
       </div>
-      {/* TODO: set a tooltip for longer config names  */}
       {/* configMap & secrets */}
       <div
         className="w-full max-w-2xl mx-auto bg-[#E7E1B1]/30 
@@ -702,7 +702,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       className="text-[10px] text-[#306D29] hover:text-[#0D530E] 
                         font-extrabold cursor-pointer underline decoration-dotted"
                     >
-                      📁 Select .env File from Desktop
+                      <FolderIcon
+                        fontSize="inherit"
+                        className="text-yellow-300"
+                      />
+                      {"  "}
+                      Select .env File from Desktop
                     </button>
                   </div>
                 </div>
@@ -871,6 +876,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           ? "bg-[#306D29] border-[#306D29] text-white font-bold shadow-sm"
                           : "bg-[#FBF5DD]/50 border-[#E7E1B1] text-[#0D530E] hover:bg-[#FBF5DD]"
                       }`}
+                    title={cfg.name}
                   >
                     <button
                       type="button"
