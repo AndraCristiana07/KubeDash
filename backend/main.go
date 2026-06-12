@@ -4,6 +4,7 @@ import (
 	"backend/config"
 	"backend/controllers"
 	"backend/models"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,9 +22,16 @@ import (
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 )
@@ -34,6 +42,13 @@ var clientset *kubernetes.Clientset
 // var metricsClientset *metricsv.Clientset
 var k8sConfig *rest.Config
 
+var dynamicClient dynamic.Interface
+var discoveryClient discovery.DiscoveryInterface
+
+type ApplyManifestPayload struct {
+	YamlString string `json:"yaml_string" binding:"required"`
+	Namespace  string `json:"namespace"` // fallback target namespace scope
+}
 type EnvMapping struct {
 	SourceKey string `json:"source_key"` // key inside ConfigMap/Secret
 	EnvKey    string `json:"env_key"`    // name inside pod container
@@ -52,9 +67,12 @@ type PodTableEntry struct {
 	Name          string   `json:"name"`
 	Namespace     string   `json:"namespace"`
 	Status        string   `json:"status"`
+	Message       string   `json:"message"`
 	Image         string   `json:"image"`
 	Ageseconds    int      `json:"age_seconds"`
 	LinkedConfigs []string `json:"linked_configs"`
+	RestartCount  int32    `json:"restart_count"`
+	LastTermState string   `json:"last_term_state"`
 }
 
 type PodResourceMetrics struct {
@@ -146,8 +164,18 @@ func main() {
 	config.ConnectDatabase()
 
 	var err error
-	kubeconfig := filepath.Join(homeDir(), ".kube", "config")
-	k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	k8sConfig, err = rest.InClusterConfig()
+	if err != nil {
+		// if fails -> local -> fall back to reading the local ~/.kube/config file
+		fmt.Println("Not running inside cluster, looking for local kubeconfig...")
+		kubeconfig := filepath.Join(homeDir(), ".kube", "config")
+		k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to load kubeconfig from home directory: %v", err))
+		}
+	} else {
+		fmt.Println("Successfully loaded In-Cluster Kubernetes configuration!")
+	}
 	if err != nil {
 		panic(fmt.Sprintf("Failed to load kubeconfig: %v", err))
 	}
@@ -156,6 +184,9 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create K8s client: %v", err))
 	}
+
+	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
+	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
 
 	fmt.Println("Scanning Kubernetes for cluster pods...")
 	watchPods()
@@ -198,6 +229,7 @@ func main() {
 		api.POST("/cluster/config/create", handleCreateConfiguration)
 		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
 		api.DELETE("/cluster/config/delete", deleteConfigBlock)
+		api.POST("/cluster/manifests/apply", applyClusterManifest)
 	}
 
 	// start Server on port 8080
@@ -445,8 +477,31 @@ func getClusterPods(c *gin.Context) {
 	var podList []PodTableEntry
 	for _, pod := range pods.Items {
 		var image string = "unknown"
+		var deepMessage string = ""
+		var restartCount int32 = 0
+		var lastTermState string = ""
+
 		if len(pod.Status.ContainerStatuses) > 0 {
-			image = pod.Status.ContainerStatuses[0].Image
+			containerStatus := pod.Status.ContainerStatuses[0]
+			image = containerStatus.Image
+			restartCount = containerStatus.RestartCount
+
+			if containerStatus.LastTerminationState.Terminated != nil {
+				reason := containerStatus.LastTerminationState.Terminated.Reason
+				// only capture the termination reason if it's an actual bad state
+				if reason != "Completed" && reason != "Terminated" && reason != "" {
+					lastTermState = reason
+				}
+			}
+
+			if containerStatus.State.Waiting != nil {
+				deepMessage = containerStatus.State.Waiting.Reason
+				if containerStatus.State.Waiting.Message != "" {
+					deepMessage = containerStatus.State.Waiting.Reason + ": " + containerStatus.State.Waiting.Message
+				}
+			} else if containerStatus.State.Terminated != nil {
+				deepMessage = containerStatus.State.Terminated.Reason
+			}
 		}
 
 		var linkedConfigs []string
@@ -481,9 +536,12 @@ func getClusterPods(c *gin.Context) {
 				Name:          pod.Name,
 				Namespace:     pod.Namespace,
 				Status:        string(pod.Status.Phase),
+				Message:       deepMessage,
 				Image:         image,
 				Ageseconds:    int(time.Since(pod.CreationTimestamp.Time).Seconds()),
 				LinkedConfigs: linkedConfigs,
+				RestartCount:  restartCount,
+				LastTermState: lastTermState,
 			})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -749,9 +807,32 @@ func handleRestartDeployment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed terminating old standalone instance: " + err.Error()})
 		return
 	}
+	// actively poll the cluster until the pod is dead
+	maxRetries := 30
+	podDeleted := false
+	for i := 0; i < maxRetries; i++ {
+		_, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+		if err != nil {
+			// if API server returns "NotFound" error -> the namespace completely dropped the pod
+			if errors.IsNotFound(err) {
+				podDeleted = true
+				break
+			}
+			// other networking error should break out early to avoid infinite loops
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error verifying state depletion: " + err.Error()})
+			return
+		}
 
-	// wait a moment for the namespace thread lock to drop old instance configurations
-	time.Sleep(1200 * time.Millisecond)
+		// wait 250ms before checking again
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if !podDeleted {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("Timeout waiting for old pod '%s' to clear its termination routine. Try again in a moment.", req.PodName),
+		})
+		return
+	}
 
 	// identical copy
 	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), nakedPodManifest, metav1.CreateOptions{})
@@ -1230,6 +1311,88 @@ func broadcastMetricsInBackground() {
 			notificationMutex.Unlock()
 		}
 	}
+}
+
+func applyClusterManifest(c *gin.Context) {
+	if dynamicClient == nil || discoveryClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Dynamic Kubernetes controller layer uninitialized"})
+		return
+	}
+
+	var payload ApplyManifestPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body payload context string"})
+		return
+	}
+
+	// multi-document decoder to loop over split segments if user drops an aggregated file containing "---"
+	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(payload.YamlString)), 4096)
+	var processedObjects []string
+
+	// memory-cached mapper layer to decode the GroupVersionKind strings (e.g. apps/v1, v1)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
+
+	for {
+		var rawObj unstructured.Unstructured
+		err := decoder.Decode(&rawObj)
+		if err == io.EOF {
+			break // all sub-documents fully read
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed parsing structural integrity layout configuration formatting: " + err.Error()})
+			return
+		}
+
+		// skip completely empty blocks
+		if rawObj.Object == nil {
+			continue
+		}
+
+		// map resource signature to find the target REST Endpoint mappings
+		gvk := rawObj.GroupVersionKind()
+		mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to discover matching API route resource: " + err.Error()})
+			return
+		}
+
+		// destination namespace bounds parameters
+		var ns string
+		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+			if rawObj.GetNamespace() != "" {
+				ns = rawObj.GetNamespace()
+			} else if payload.Namespace != "" {
+				ns = payload.Namespace
+			} else {
+				ns = "default" // default safe boundary fallback
+			}
+		}
+
+		// create a Resource Interface controller anchor
+		var dr dynamic.ResourceInterface
+		if ns != "" {
+			dr = dynamicClient.Resource(mapping.Resource).Namespace(ns)
+		} else {
+			dr = dynamicClient.Resource(mapping.Resource)
+		}
+
+		// 'kubectl apply'
+		_, err = dr.Create(c.Request.Context(), &rawObj, metav1.CreateOptions{})
+		if err != nil {
+			_, err = dr.Update(c.Request.Context(), &rawObj, metav1.UpdateOptions{})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed applying cluster state change configuration modification parameters: " + err.Error()})
+				return
+			}
+		}
+
+		processedObjects = append(processedObjects, rawObj.GetKind()+": "+rawObj.GetName())
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"applied": processedObjects,
+	})
 }
 
 func homeDir() string {

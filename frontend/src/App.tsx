@@ -5,9 +5,11 @@ import AuditLogView from "./AuditLogs";
 import { SettingsPanel } from "./SettingsPanel";
 import ClusterMetricsDashboard from "./ClusterMetricsDashboard";
 import ClusterPodsTable from "./PodsManagement";
-import toast, { Toaster } from "react-hot-toast";
+import YamlDeployModal from "./YAMLDeployModal";
+import toast, { Toaster, useToasterStore } from "react-hot-toast";
+import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
+import WarningIcon from "@mui/icons-material/Warning";
 
-// TODO: everywhere where the system core pods show, put them in a diff color
 interface ClusterLog {
   ID: number;
   pod_name: string;
@@ -21,9 +23,12 @@ interface PodEntry {
   name: string;
   namespace: string;
   status: string;
+  message: string;
   image: string;
   age_seconds: number;
   linked_configs: string[];
+  restart_count: number;
+  last_term_state?: string;
 }
 
 const GO_API =
@@ -46,6 +51,8 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isYamlModalOpen, setIsYamlModalOpen] = useState(false);
+
   const [newPodName, setNewPodName] = useState<string>("");
   const [newPodImage, setNewPodImage] = useState<string>("");
   const [isDeploying, setIsDeploying] = useState<boolean>(false);
@@ -180,6 +187,19 @@ export default function App() {
       fetchClusterConfigsForDeployment();
     }
   }, [isModalOpen, configEditPod, targetNamespace, GO_API]);
+
+  const { toasts } = useToasterStore();
+
+  // for toaster limits
+  useEffect(() => {
+    const TOAST_LIMIT = 4;
+    if (toasts.length > TOAST_LIMIT) {
+      toasts
+        .filter((t) => t.visible) // look at active onscreen alerts
+        .filter((_, idx) => idx >= TOAST_LIMIT) // grab any that overflow the boundary limit
+        .forEach((t) => toast.dismiss(t.id)); // evict them from the queue
+    }
+  }, [toasts]);
 
   const handleDeletePod = async (namespace: string, name: string) => {
     if (!window.confirm(`Are you sure you want to terminate pod "${name}"?`))
@@ -347,6 +367,51 @@ export default function App() {
       });
 
       if (res.ok) {
+        toast.success(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Successfully deployed pod {newPodName.trim()}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
         setIsModalOpen(false);
         setNewPodName("");
         setNewPodImage("");
@@ -373,7 +438,7 @@ export default function App() {
 
     if (isCoreInfrastructure) {
       const confirmationPrompt = window.confirm(
-        `⚠️ WARNING: You are attempting to restart a core dashboard component ("${podName}").\n\n` +
+        `WARNING: You are attempting to restart a core dashboard component ("${podName}").\n\n` +
           `This action will momentarily disconnect your dashboard, drop active log streams, and interrupt live monitoring sessions.\n\n` +
           `Are you absolutely sure you want to proceed?`,
       );
@@ -401,16 +466,48 @@ export default function App() {
 
       if (res.ok) {
         toast.success(
-          (t) => (
+          (t: any) => (
             <div className="flex items-start gap-3 justify-between w-full">
-              <span className="text-xs text-[#0D530E] font-medium">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
                 Rolling restart safely dispatched for pod instance!
               </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </div>
           ),
           {
-            duration: 4000,
-            style: { background: "#FBF5DD", borderLeft: "4px solid #306D29" },
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
           },
         );
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
@@ -474,9 +571,9 @@ export default function App() {
     };
 
     ws.onmessage = (event) => {
-      console.log("Received event hunk data payload:", event.data);
       try {
         const clusterEvent = JSON.parse(event.data);
+
         if (clusterEvent.type === "metrics_telemetry" && clusterEvent.data) {
           const payload = clusterEvent.data;
           const key = `${payload.namespace}/${payload.pod_name}`;
@@ -492,10 +589,10 @@ export default function App() {
               last_updated: Date.now(),
             },
           }));
-          return; // event resolved, break out early
+          return;
         }
 
-        if (!clusterEvent.message) return;
+        if (!clusterEvent.message || clusterEvent.message.trim() === "") return;
 
         const msgText = clusterEvent.message;
         const namespaceText = clusterEvent.namespace || "default";
@@ -506,7 +603,8 @@ export default function App() {
         const isErrorMsg =
           msgText.toLowerCase().includes("fail") ||
           msgText.toLowerCase().includes("backoff") ||
-          msgText.toLowerCase().includes("err");
+          msgText.toLowerCase().includes("err") ||
+          msgText.toLowerCase().includes("nonexistent");
 
         if (isWarning || isErrorMsg) {
           toast.custom(
@@ -520,13 +618,17 @@ export default function App() {
                 border-l-4 border-l-red-600`}
               >
                 <div className="flex-1">
-                  <p className="text-xs font-mono font-bold text-red-800">
-                    ⚠️ CLUSTER WARNING ({namespaceText})
+                  <p className="text-xs font-mono font-bold text-red-800 flex items-center gap-1">
+                    <WarningIcon
+                      fontSize="inherit"
+                      className="text-[#FFDA03]"
+                    />{" "}
+                    CLUSTER WARNING ({namespaceText})
                   </p>
                   <p className="text-xs text-[#0D530E] mt-1 font-semibold">
                     Pod: {podText}
                   </p>
-                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3">
+                  <p className="text-xs text-[#306D29] mt-1 line-clamp-3 font-mono leading-relaxed">
                     {msgText}
                   </p>
                 </div>
@@ -537,7 +639,7 @@ export default function App() {
                     toast.remove(t.id);
                   }}
                   className="text-[#306D29]/50 hover:text-[#0D530E] 
-                  p-0.5 rounded transition-colors focus:outline-none 
+                  p-0.5 rounded transition-colors focus:outline-hidden 
                   cursor-pointer flex-shrink-0"
                   aria-label="Close alert"
                 >
@@ -557,8 +659,29 @@ export default function App() {
                 </button>
               </div>
             ),
-            { duration: 6000, id: `toast-${podText}` },
+            {
+              duration: 7000,
+              id: `toast-${podText}`,
+            },
           );
+
+          setDbLogs((prev: ClusterLog[]) => {
+            const logExists = prev.some(
+              (l) => l.message === msgText && l.pod_name === podText,
+            );
+            if (logExists) return prev;
+
+            const newLog: ClusterLog = {
+              ID: Date.now(),
+              namespace: namespaceText,
+              pod_name: podText,
+              message: msgText,
+              level: "Warning",
+              CreatedAt: new Date().toISOString(),
+            };
+
+            return [newLog, ...prev];
+          });
         }
       } catch (err) {
         console.error("Failed parsing incoming alert package:", err);
@@ -688,7 +811,10 @@ export default function App() {
                     status === "Healthy" ? "text-[#5BB450]" : "text-[#B32626]"
                   }`}
                 >
-                  <span className="animate-pulse">●</span> {status}
+                  <span className="animate-pulse">
+                    <FiberManualRecordIcon fontSize="inherit" />
+                  </span>{" "}
+                  {status}
                 </div>
               </div>
 
@@ -831,6 +957,9 @@ export default function App() {
             setEditConfigType={setEditConfigType}
             setEditMappings={setEditMappings}
             formatPodAge={formatPodAge}
+            handleManualRefresh={handleManualRefresh}
+            GO_API={GO_API}
+            toast={toast}
           />
         ) : activeTab == "audit" ? (
           <AuditLogView goApiUrl={GO_API} activeNamespace={targetNamespace} />
@@ -860,15 +989,28 @@ export default function App() {
               rounded-xl p-6 shadow-2xl space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto"
           >
             <div>
-              <h3 className="text-base font-black text-[#0D530E]">
-                Deploy New Workspace Workload
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Spawns a container pod instance into namespace:{" "}
-                <span className="font-bold underline text-[#306D29]">
-                  {targetNamespace || "default"}
-                </span>
-              </p>
+              <div>
+                <h3 className="text-base font-black text-[#0D530E]">
+                  Deploy New Workspace Workload
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                  Namespace context scope:{" "}
+                  <span className="font-bold underline text-[#306D29]">
+                    {targetNamespace || "default"}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setIsYamlModalOpen(true);
+                }}
+                className="px-2 py-1 text-[10px] font-black tracking-wide uppercase font-mono bg-amber-600/10 text-amber-800 border border-amber-600/30 hover:bg-amber-600 hover:text-white rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Shift deployment methodology framework schema configurations over to direct text template scripts uploader"
+              >
+                Apply YAML Manifest
+              </button>
             </div>
 
             <form onSubmit={handleDeployPod} className="space-y-4">
@@ -1087,6 +1229,14 @@ export default function App() {
           </div>
         </div>
       )}
+      <YamlDeployModal
+        isOpen={isYamlModalOpen}
+        onClose={() => setIsYamlModalOpen(false)}
+        targetNamespace={targetNamespace}
+        handleManualRefresh={handleManualRefresh}
+        toast={toast}
+        GO_API={GO_API}
+      />
       {sshPod && (
         <TerminalModal
           podName={sshPod.name}
@@ -1195,7 +1345,6 @@ export default function App() {
             </div>
 
             <div className="space-y-3">
-              {/* Choose Resource Block */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Select Target Cluster Resource
@@ -1242,7 +1391,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Dynamic Mapping Matrix */}
               {editConfigName && (
                 <div className="space-y-2 pt-2 border-t border-[#E7E1B1]/40">
                   <div className="flex justify-between items-center">
@@ -1337,7 +1485,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Form Actions */}
+            {/* form actions */}
             <div className="flex justify-end gap-2 pt-2 border-t border-[#E7E1B1]/40">
               <button
                 type="button"

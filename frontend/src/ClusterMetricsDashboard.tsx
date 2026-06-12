@@ -5,6 +5,8 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
+import SearchIcon from "@mui/icons-material/Search";
+import ResourceHogsPanel from "./ResourceHogPanel";
 
 interface PodMetricRow {
   pod_name: string;
@@ -290,7 +292,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
       </div>
-
+      <ResourceHogsPanel metrics={metrics} />
       <div className="flex items-center gap-2 border-b border-[#E7E1B1] pb-px font-mono text-xs">
         <button
           onClick={() => setActiveSubTab("usage")}
@@ -321,13 +323,28 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               ? "Live Hardware Compute Monitor"
               : "Timeline Velocity Vector Matrices"}
           </div>
-          <input
-            type="text"
-            placeholder="Filter nodes by pod/namespace..."
-            value={filterText}
-            onChange={handleFilterChange}
-            className="px-3 py-1.5 text-xs bg-white text-slate-800 placeholder-slate-400 rounded-md border border-[#E7E1B1] focus:outline-none focus:border-[#0D530E] w-64 shadow-inner"
-          />
+          <div className="relative w-full sm:w-72 flex items-center">
+            <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
+              <SearchIcon fontSize="small" />
+            </span>
+            <input
+              type="text"
+              placeholder="Filter nodes by pod/namespace..."
+              value={filterText}
+              onChange={handleFilterChange}
+              className="w-full pl-9 pr-4 py-1.5 bg-white border border-[#E7E1B1] rounded-lg text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-[#306D29] focus:border-[#306D29] transition-all shadow-2xs"
+            />
+            {filterText && (
+              <button
+                onClick={() =>
+                  handleFilterChange({ target: { value: "" } } as any)
+                }
+                className="absolute right-2.5 text-slate-400 hover:text-slate-600 text-xs font-sans font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -370,51 +387,60 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               </thead>
               <tbody className="divide-y divide-[#E7E1B1]/50 text-xs">
                 {currentMetricRows.length > 0 ? (
-                  currentMetricRows.map((row) => (
-                    <tr
-                      key={`${row.namespace}/${row.pod_name}`}
-                      className="hover:bg-[#FBF5DD]/30 transition-colors"
-                    >
-                      <td className="px-5 py-3.5 font-bold text-[#306D29]">
-                        {row.namespace}
-                      </td>
-                      <td className="px-5 py-3.5 font-semibold text-slate-700">
-                        {row.pod_name}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-[11px] text-slate-500 mb-0.5">
-                          {row.cpu_usage}m
-                        </div>
-                        {renderProgressBar(row.cpu_usage, 2000, "cpu")}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-[11px] text-slate-500 mb-0.5">
-                          {row.mem_usage} MB
-                        </div>
-                        {renderProgressBar(row.mem_usage, 4096, "mem")}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {row.gpu_usage > 0 ? (
-                          <>
-                            <div className="text-[11px] text-slate-500 mb-0.5">
-                              Core Active
-                            </div>
-                            {renderProgressBar(row.gpu_usage, 100, "gpu")}
-                          </>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px] tracking-wide select-none">
-                            —
+                  currentMetricRows.map((row) => {
+                    const isSystemCore =
+                      row.pod_name.includes("kubedash-") ||
+                      row.namespace.includes("kube-system");
+                    return (
+                      <tr
+                        key={`${row.namespace}/${row.pod_name}`}
+                        className={`transition-colors ${
+                          isSystemCore
+                            ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                            : "hover:bg-[#FBF5DD]/30"
+                        }`}
+                      >
+                        <td className="px-5 py-3.5 font-bold text-[#306D29]">
+                          {row.namespace}
+                        </td>
+                        <td className="px-5 py-3.5 font-semibold text-slate-700">
+                          {row.pod_name}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="text-[11px] text-slate-500 mb-0.5">
+                            {row.cpu_usage}m
+                          </div>
+                          {renderProgressBar(row.cpu_usage, 2000, "cpu")}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="text-[11px] text-slate-500 mb-0.5">
+                            {row.mem_usage} MB
+                          </div>
+                          {renderProgressBar(row.mem_usage, 4096, "mem")}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {row.gpu_usage > 0 ? (
+                            <>
+                              <div className="text-[11px] text-slate-500 mb-0.5">
+                                Core Active
+                              </div>
+                              {renderProgressBar(row.gpu_usage, 100, "gpu")}
+                            </>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px] tracking-wide select-none">
+                              —
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                            LIVE
                           </span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                          LIVE
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td
@@ -471,10 +497,17 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
                       gpu: [],
                     };
 
+                    const isSystemCore =
+                      row.pod_name.includes("kubedash-") ||
+                      row.namespace.includes("kube-system");
                     return (
                       <tr
                         key={targetKey}
-                        className="hover:bg-[#FBF5DD]/30 transition-colors"
+                        className={`transition-colors ${
+                          isSystemCore
+                            ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                            : "bg-[#FBF5DD]/10 hover:bg-[#FBF5DD]/30 border-l-4 border-l-transparent"
+                        }`}
                       >
                         <td className="px-5 py-4">
                           <div className="font-bold text-slate-700">

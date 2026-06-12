@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import FolderIcon from "@mui/icons-material/Folder";
 
 interface SettingsPanelProps {
   GO_API: string;
@@ -28,8 +29,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [newBlockType, setNewBlockType] = useState("configmap");
   const [newBlockName, setNewBlockName] = useState("");
-  const [newBlockKey, setNewBlockKey] = useState("");
-  const [newBlockValue, setNewBlockValue] = useState("");
   const [isSubmittingBlock, setIsSubmittingBlock] = useState(false);
   const [newBlockNamespace, setNewBlockNamespace] = useState("default");
   const [newBlockFields, setNewBlockFields] = useState<
@@ -103,11 +102,49 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       if (res.ok) {
         toast.success(
           (t: any) => (
-            <div className="text-xs text-[#0D530E] font-medium">
-              Configuration variables successfully synced with cluster!
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Configuration variables successfully synced with cluster!
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </div>
           ),
-          { style: { background: "#FBF5DD", borderLeft: "4px solid #306D29" } },
+          {
+            duration: 5000,
+            position: "top-right",
+            id: selectedConfig,
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
         );
         setSelectedConfig(null);
         fetchClusterConfigs();
@@ -170,14 +207,52 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       if (res.ok) {
         toast.success(
           (t: any) => (
-            <div className="text-xs text-[#0D530E] font-medium">
-              Successfully injected multi-variable{" "}
-              {newBlockType === "secret" ? "Secret" : "ConfigMap"} into cluster!
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Successfully injected multi-variable{" "}
+                {newBlockType === "secret" ? "Secret" : "ConfigMap"} into
+                cluster!
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </div>
           ),
-          { style: { background: "#FBF5DD", borderLeft: "4px solid #306D29" } },
+          {
+            duration: 5000,
+            position: "top-right",
+            id: payload.name,
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
         );
-
         setNewBlockName("");
         setNewBlockFields([{ key: "", value: "" }]); // reset back to a single blank row
         setIsCreating(false);
@@ -250,6 +325,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {
             duration: 5000,
             position: "top-right",
+            id: name,
             style: {
               background: "#FBF5DD",
               border: "1px solid #E7E1B1",
@@ -447,7 +523,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
       </div>
-      {/* TODO: set a tooltip for longer config names  */}
       {/* configMap & secrets */}
       <div
         className="w-full max-w-2xl mx-auto bg-[#E7E1B1]/30 
@@ -702,7 +777,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       className="text-[10px] text-[#306D29] hover:text-[#0D530E] 
                         font-extrabold cursor-pointer underline decoration-dotted"
                     >
-                      📁 Select .env File from Desktop
+                      <FolderIcon
+                        fontSize="inherit"
+                        className="text-yellow-300"
+                      />
+                      {"  "}
+                      Select .env File from Desktop
                     </button>
                   </div>
                 </div>
@@ -871,6 +951,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           ? "bg-[#306D29] border-[#306D29] text-white font-bold shadow-sm"
                           : "bg-[#FBF5DD]/50 border-[#E7E1B1] text-[#0D530E] hover:bg-[#FBF5DD]"
                       }`}
+                    title={cfg.name}
                   >
                     <button
                       type="button"

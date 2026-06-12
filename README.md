@@ -2,17 +2,72 @@
 
 A local log and metrics aggregator
 
-Adding pods:
+Prerequisites:
+Before starting, make sure you have these installed on your machine:
+
+- Docker
+- Kind
+- kubectl
+
+Init: 0. Go into the backend folder
 
 ```sh
- kubectl apply -f k8s/deployment.yaml
- kubectl apply -f k8s/postgres.yaml
+cd backend
 ```
 
-For testing degraded run:
+1. Make the kind cluster:
 
 ```sh
- kubectl run crash-test --image=nginx:does-not-exist
+kind create cluster --name kubedash-cluster
+```
+
+2. Deploy the Database (PostgreSQL) and verify it's running:
+
+```sh
+kubectl apply -f k8s/deployment.yaml
+kubectl get pods -l app=postgres
+```
+
+3. Build and load the backend app:
+
+```sh
+# build the go backend docker container
+docker build -t kubedash-backend:v1
+# load the image into the active kind cluster
+kind load docker-image kubedash-backend:v1 --name kubedash-cluster
+```
+
+4. Apply app manifesrs and permissions and check status of pods:
+
+```sh
+kubectl apply -f k8s/deployment.yaml
+kubectl get pods -A
+```
+
+5. Deploy metrics server manifest and patch it for kind:
+
+```sh
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl patch -n kube-system deployment metrics-server --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+6. Access the dashboard (port forwarding):
+
+```sh
+kubectl port-forward svc/postgres-service 5432:5432
+```
+
+7. In another terminal, run the backend:
+
+```sh
+cd backend && go run main.go
+```
+
+8. Open another terminal to run the frontend
+
+```sh
+cd frontend && npm start
 ```
 
 ## Metrics row
