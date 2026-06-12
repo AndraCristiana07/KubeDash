@@ -11,6 +11,11 @@ import (
 
 // POST /api/logs - create new log entry
 func CreateLog(c *gin.Context) {
+	if config.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database stream proxy is initializing. Please retry in a moment."})
+		return
+	}
+
 	var input models.ClusterLog
 
 	// bind incoming JSON request to our struct
@@ -27,6 +32,10 @@ func CreateLog(c *gin.Context) {
 
 // GET /api/logs - fetch logs
 func GetLogs(c *gin.Context) {
+	if config.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database stream proxy is initializing. Please retry in a moment."})
+		return
+	}
 	var logs []models.ClusterLog
 
 	// filter parameters from the URL query string
@@ -90,6 +99,11 @@ func GetLogs(c *gin.Context) {
 
 // GET /api/logs/overview
 func GetOverviewLogs(c *gin.Context) {
+
+	if config.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database stream proxy is initializing. Please retry in a moment."})
+		return
+	}
 	var logs []models.ClusterLog
 	nsFilter := c.Query("namespace")
 
