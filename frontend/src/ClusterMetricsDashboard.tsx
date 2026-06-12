@@ -6,6 +6,7 @@ import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import SearchIcon from "@mui/icons-material/Search";
+import ResourceHogsPanel from "./ResourceHogPanel";
 
 interface PodMetricRow {
   pod_name: string;
@@ -291,7 +292,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
           </div>
         </div>
       </div>
-
+      <ResourceHogsPanel metrics={metrics} />
       <div className="flex items-center gap-2 border-b border-[#E7E1B1] pb-px font-mono text-xs">
         <button
           onClick={() => setActiveSubTab("usage")}
