@@ -15,6 +15,7 @@ interface AuditLogViewProps {
   activeNamespace: string;
 }
 
+// TODO: add asc/desc - sorting to columns
 export default function AuditLogView({
   goApiUrl,
   activeNamespace,

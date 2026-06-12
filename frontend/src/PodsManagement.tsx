@@ -133,9 +133,53 @@ export default function ClusterPodsTable({
 
     setIsBulkExecuting(false);
     setSelectedPods([]); // clear selected list
-    toast.success(`Successfully signaled orchestration cycles for pods!`, {
-      id: "bulk-op",
-    });
+
+    toast.success(
+      (t: any) => (
+        <div className="flex items-start gap-3 justify-between w-full">
+          <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+            Successfully signaled orchestration cycles for pods!
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.dismiss(t.id);
+              toast.remove(t.id);
+            }}
+            className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+            aria-label="Close alert"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+      ),
+      {
+        duration: 5000,
+        position: "top-right",
+        id: "bulk-op",
+        style: {
+          background: "#FBF5DD",
+          border: "1px solid #E7E1B1",
+          borderLeft: "4px solid #306D29",
+          maxWidth: "420px",
+          width: "100%",
+        },
+      },
+    );
     handleManualRefresh();
   };
 
@@ -164,7 +208,52 @@ export default function ClusterPodsTable({
 
     setIsBulkExecuting(false);
     setSelectedPods([]); // clear selected list
-    toast.success(`Eviction signal executed successfully!`, { id: "bulk-op" });
+    toast.success(
+      (t: any) => (
+        <div className="flex items-start gap-3 justify-between w-full">
+          <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+            Eviction signal executed successfully!
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.dismiss(t.id);
+              toast.remove(t.id);
+            }}
+            className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+            aria-label="Close alert"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+      ),
+      {
+        duration: 5000,
+        position: "top-right",
+        id: "bulk-op",
+        style: {
+          background: "#FBF5DD",
+          border: "1px solid #E7E1B1",
+          borderLeft: "4px solid #306D29",
+          maxWidth: "420px",
+          width: "100%",
+        },
+      },
+    );
     handleManualRefresh();
   };
 

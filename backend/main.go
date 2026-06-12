@@ -4,6 +4,7 @@ import (
 	"backend/config"
 	"backend/controllers"
 	"backend/models"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,9 +22,16 @@ import (
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 )
@@ -34,6 +42,13 @@ var clientset *kubernetes.Clientset
 // var metricsClientset *metricsv.Clientset
 var k8sConfig *rest.Config
 
+var dynamicClient dynamic.Interface
+var discoveryClient discovery.DiscoveryInterface
+
+type ApplyManifestPayload struct {
+	YamlString string `json:"yaml_string" binding:"required"`
+	Namespace  string `json:"namespace"` // fallback target namespace scope
+}
 type EnvMapping struct {
 	SourceKey string `json:"source_key"` // key inside ConfigMap/Secret
 	EnvKey    string `json:"env_key"`    // name inside pod container
@@ -170,6 +185,9 @@ func main() {
 		panic(fmt.Sprintf("Failed to create K8s client: %v", err))
 	}
 
+	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
+	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
+
 	fmt.Println("Scanning Kubernetes for cluster pods...")
 	watchPods()
 	fmt.Println("Scanning Kubernetes...")
@@ -211,6 +229,7 @@ func main() {
 		api.POST("/cluster/config/create", handleCreateConfiguration)
 		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
 		api.DELETE("/cluster/config/delete", deleteConfigBlock)
+		api.POST("/cluster/manifests/apply", applyClusterManifest)
 	}
 
 	// start Server on port 8080
@@ -1265,6 +1284,88 @@ func broadcastMetricsInBackground() {
 			notificationMutex.Unlock()
 		}
 	}
+}
+
+func applyClusterManifest(c *gin.Context) {
+	if dynamicClient == nil || discoveryClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Dynamic Kubernetes controller layer uninitialized"})
+		return
+	}
+
+	var payload ApplyManifestPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body payload context string"})
+		return
+	}
+
+	// multi-document decoder to loop over split segments if user drops an aggregated file containing "---"
+	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(payload.YamlString)), 4096)
+	var processedObjects []string
+
+	// memory-cached mapper layer to decode the GroupVersionKind strings (e.g. apps/v1, v1)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
+
+	for {
+		var rawObj unstructured.Unstructured
+		err := decoder.Decode(&rawObj)
+		if err == io.EOF {
+			break // all sub-documents fully read
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed parsing structural integrity layout configuration formatting: " + err.Error()})
+			return
+		}
+
+		// skip completely empty blocks
+		if rawObj.Object == nil {
+			continue
+		}
+
+		// map resource signature to find the target REST Endpoint mappings
+		gvk := rawObj.GroupVersionKind()
+		mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to discover matching API route resource: " + err.Error()})
+			return
+		}
+
+		// destination namespace bounds parameters
+		var ns string
+		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+			if rawObj.GetNamespace() != "" {
+				ns = rawObj.GetNamespace()
+			} else if payload.Namespace != "" {
+				ns = payload.Namespace
+			} else {
+				ns = "default" // default safe boundary fallback
+			}
+		}
+
+		// create a Resource Interface controller anchor
+		var dr dynamic.ResourceInterface
+		if ns != "" {
+			dr = dynamicClient.Resource(mapping.Resource).Namespace(ns)
+		} else {
+			dr = dynamicClient.Resource(mapping.Resource)
+		}
+
+		// 'kubectl apply'
+		_, err = dr.Create(c.Request.Context(), &rawObj, metav1.CreateOptions{})
+		if err != nil {
+			_, err = dr.Update(c.Request.Context(), &rawObj, metav1.UpdateOptions{})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed applying cluster state change configuration modification parameters: " + err.Error()})
+				return
+			}
+		}
+
+		processedObjects = append(processedObjects, rawObj.GetKind()+": "+rawObj.GetName())
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"applied": processedObjects,
+	})
 }
 
 func homeDir() string {

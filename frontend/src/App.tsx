@@ -5,6 +5,7 @@ import AuditLogView from "./AuditLogs";
 import { SettingsPanel } from "./SettingsPanel";
 import ClusterMetricsDashboard from "./ClusterMetricsDashboard";
 import ClusterPodsTable from "./PodsManagement";
+import YamlDeployModal from "./YAMLDeployModal";
 import toast, { Toaster, useToasterStore } from "react-hot-toast";
 import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
 import WarningIcon from "@mui/icons-material/Warning";
@@ -51,6 +52,8 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isYamlModalOpen, setIsYamlModalOpen] = useState(false);
+
   const [newPodName, setNewPodName] = useState<string>("");
   const [newPodImage, setNewPodImage] = useState<string>("");
   const [isDeploying, setIsDeploying] = useState<boolean>(false);
@@ -365,6 +368,51 @@ export default function App() {
       });
 
       if (res.ok) {
+        toast.success(
+          (t) => (
+            <div className="flex items-start gap-3 justify-between w-full">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
+                Successfully deployed pod {newPodName.trim()}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          ),
+          {
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
+          },
+        );
         setIsModalOpen(false);
         setNewPodName("");
         setNewPodImage("");
@@ -419,16 +467,48 @@ export default function App() {
 
       if (res.ok) {
         toast.success(
-          (t) => (
+          (t: any) => (
             <div className="flex items-start gap-3 justify-between w-full">
-              <span className="text-xs text-[#0D530E] font-medium">
+              <span className="text-xs text-[#0D530E] font-medium leading-relaxed">
                 Rolling restart safely dispatched for pod instance!
               </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast.dismiss(t.id);
+                  toast.remove(t.id);
+                }}
+                className="text-[#306D29]/50 hover:text-[#0D530E] 
+                  p-0.5 rounded transition-colors focus:outline-none 
+                  cursor-pointer flex-shrink-0"
+                aria-label="Close alert"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </div>
           ),
           {
-            duration: 4000,
-            style: { background: "#FBF5DD", borderLeft: "4px solid #306D29" },
+            duration: 5000,
+            position: "top-right",
+            style: {
+              background: "#FBF5DD",
+              border: "1px solid #E7E1B1",
+              borderLeft: "4px solid #306D29",
+              maxWidth: "420px",
+              width: "100%",
+            },
           },
         );
         await Promise.all([fetchClusterMetrics(), fetchClusterPods()]);
@@ -910,15 +990,28 @@ export default function App() {
               rounded-xl p-6 shadow-2xl space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto"
           >
             <div>
-              <h3 className="text-base font-black text-[#0D530E]">
-                Deploy New Workspace Workload
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Spawns a container pod instance into namespace:{" "}
-                <span className="font-bold underline text-[#306D29]">
-                  {targetNamespace || "default"}
-                </span>
-              </p>
+              <div>
+                <h3 className="text-base font-black text-[#0D530E]">
+                  Deploy New Workspace Workload
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                  Namespace context scope:{" "}
+                  <span className="font-bold underline text-[#306D29]">
+                    {targetNamespace || "default"}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setIsYamlModalOpen(true);
+                }}
+                className="px-2 py-1 text-[10px] font-black tracking-wide uppercase font-mono bg-amber-600/10 text-amber-800 border border-amber-600/30 hover:bg-amber-600 hover:text-white rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Shift deployment methodology framework schema configurations over to direct text template scripts uploader"
+              >
+                Apply YAML Manifest
+              </button>
             </div>
 
             <form onSubmit={handleDeployPod} className="space-y-4">
@@ -1137,6 +1230,14 @@ export default function App() {
           </div>
         </div>
       )}
+      <YamlDeployModal
+        isOpen={isYamlModalOpen}
+        onClose={() => setIsYamlModalOpen(false)}
+        targetNamespace={targetNamespace}
+        handleManualRefresh={handleManualRefresh}
+        toast={toast}
+        GO_API={GO_API}
+      />
       {sshPod && (
         <TerminalModal
           podName={sshPod.name}
