@@ -160,13 +160,9 @@ func (w *wsStreamHandler) Write(p []byte) (n int, err error) {
 }
 
 func main() {
-	// initialize Database
-	config.ConnectDatabase()
-
 	var err error
 	k8sConfig, err = rest.InClusterConfig()
 	if err != nil {
-		// if fails -> local -> fall back to reading the local ~/.kube/config file
 		fmt.Println("Not running inside cluster, looking for local kubeconfig...")
 		kubeconfig := filepath.Join(homeDir(), ".kube", "config")
 		k8sConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -176,14 +172,16 @@ func main() {
 	} else {
 		fmt.Println("Successfully loaded In-Cluster Kubernetes configuration!")
 	}
-	if err != nil {
-		panic(fmt.Sprintf("Failed to load kubeconfig: %v", err))
-	}
 
 	clientset, err = kubernetes.NewForConfig(k8sConfig)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create K8s client: %v", err))
 	}
+
+	config.K8sConfig = k8sConfig
+	config.Clientset = clientset
+
+	config.ConnectDatabase()
 
 	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
 	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
@@ -194,7 +192,6 @@ func main() {
 	go watchEventsInBackground()
 	go broadcastMetricsInBackground()
 
-	// setup Gin Router
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
@@ -210,7 +207,6 @@ func main() {
 		c.Next()
 	})
 
-	// define Routes
 	api := r.Group("/api")
 	{
 		api.POST("/logs", controllers.CreateLog)
@@ -232,7 +228,6 @@ func main() {
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
 	}
 
-	// start Server on port 8080
 	r.Run(":8080")
 }
 
@@ -276,6 +271,14 @@ func watchEventsInBackground() {
 			CreatedAt: time.Now(),
 		}
 
+		// prevent nil pointer dereference on boot
+		if config.DB == nil {
+			fmt.Printf("[INITIALIZING] Cached K8s Event (DB connecting...): [%s] %s Namespace: %s\n", logEntry.Level, logEntry.Message, logEntry.Namespace)
+
+			broadcastToWebSockets(logEntry)
+			continue
+		}
+
 		// entry in PostgreSQL database
 		if err := config.DB.Create(&logEntry).Error; err != nil {
 			log.Printf("Failed to save event to DB: %v\n", err)
@@ -283,33 +286,36 @@ func watchEventsInBackground() {
 			fmt.Printf("Saved K8s Event: [%s] %s Namespace: %s\n", logEntry.Level, logEntry.Message, logEntry.Namespace)
 
 			// give cluster events across the WebSocket connections
+			broadcastToWebSockets(logEntry)
+		}
+	}
+}
 
-			messageText := logEntry.Message
-			isWarningType := logEntry.Level == "Warning"
-			hasErrorKeyword := containsErrorKeyword(messageText)
+func broadcastToWebSockets(logEntry models.ClusterLog) {
+	messageText := logEntry.Message
+	isWarningType := logEntry.Level == "Warning"
+	hasErrorKeyword := containsErrorKeyword(messageText)
 
-			// Warning or Normal event signaling a clear failure
-			if isWarningType || hasErrorKeyword {
-				notificationMutex.Lock()
+	// Warning or Normal event signaling a clear failure
+	if isWarningType || hasErrorKeyword {
+		notificationMutex.Lock()
 
-				log.Printf("Broadcasting event! Current active clients in connection pool: %d", len(notificationClients))
+		log.Printf("Broadcasting event! Current active clients in connection pool: %d", len(notificationClients))
 
-				for client := range notificationClients {
-					if hasErrorKeyword {
-						logEntry.Level = "Warning"
-					}
-					err := client.WriteJSON(logEntry)
-					if err != nil {
-						log.Printf("Client disconnected or broke during write: %v", err)
-						client.Close()
-						delete(notificationClients, client)
-					} else {
-						log.Printf("Successfully sent JSON packet payload over the socket pipe to browser!")
-					}
-				}
-				notificationMutex.Unlock()
+		for client := range notificationClients {
+			if hasErrorKeyword {
+				logEntry.Level = "Warning"
+			}
+			err := client.WriteJSON(logEntry)
+			if err != nil {
+				log.Printf("Client disconnected or broke during write: %v", err)
+				client.Close()
+				delete(notificationClients, client)
+			} else {
+				log.Printf("Successfully sent JSON packet payload over the socket pipe to browser!")
 			}
 		}
+		notificationMutex.Unlock()
 	}
 }
 

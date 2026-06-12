@@ -52,19 +52,13 @@ kubectl patch -n kube-system deployment metrics-server --type=json \
   -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 ```
 
-6. Access the dashboard (port forwarding):
-
-```sh
-kubectl port-forward svc/postgres-service 5432:5432
-```
-
-7. In another terminal, run the backend:
+6. In another terminal, run the backend:
 
 ```sh
 cd backend && go run main.go
 ```
 
-8. Open another terminal to run the frontend
+7. Open another terminal to run the frontend
 
 ```sh
 cd frontend && npm start
