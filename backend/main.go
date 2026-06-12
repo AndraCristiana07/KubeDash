@@ -487,7 +487,11 @@ func getClusterPods(c *gin.Context) {
 			restartCount = containerStatus.RestartCount
 
 			if containerStatus.LastTerminationState.Terminated != nil {
-				lastTermState = containerStatus.LastTerminationState.Terminated.Reason
+				reason := containerStatus.LastTerminationState.Terminated.Reason
+				// only capture the termination reason if it's an actual bad state
+				if reason != "Completed" && reason != "Terminated" && reason != "" {
+					lastTermState = reason
+				}
 			}
 
 			if containerStatus.State.Waiting != nil {
@@ -803,9 +807,32 @@ func handleRestartDeployment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed terminating old standalone instance: " + err.Error()})
 		return
 	}
+	// actively poll the cluster until the pod is dead
+	maxRetries := 30
+	podDeleted := false
+	for i := 0; i < maxRetries; i++ {
+		_, err := clientset.CoreV1().Pods(req.Namespace).Get(context.TODO(), req.PodName, metav1.GetOptions{})
+		if err != nil {
+			// if API server returns "NotFound" error -> the namespace completely dropped the pod
+			if errors.IsNotFound(err) {
+				podDeleted = true
+				break
+			}
+			// other networking error should break out early to avoid infinite loops
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error verifying state depletion: " + err.Error()})
+			return
+		}
 
-	// wait a moment for the namespace thread lock to drop old instance configurations
-	time.Sleep(1200 * time.Millisecond)
+		// wait 250ms before checking again
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if !podDeleted {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("Timeout waiting for old pod '%s' to clear its termination routine. Try again in a moment.", req.PodName),
+		})
+		return
+	}
 
 	// identical copy
 	_, err = clientset.CoreV1().Pods(req.Namespace).Create(context.TODO(), nakedPodManifest, metav1.CreateOptions{})

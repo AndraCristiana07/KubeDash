@@ -10,6 +10,40 @@ const WB =
   (typeof process !== "undefined" && process.env?.REACT_WEBSOCKET) ||
   "ws://localhost:8080";
 
+const HighlightedLogLine = ({
+  text,
+  highlight,
+}: {
+  text: string;
+  highlight: string;
+}) => {
+  if (!highlight.trim()) {
+    return <span>{text}</span>;
+  }
+
+  // escape special regex characters so things like brackets don't crash the script
+  const escapedQuery = highlight.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+  const regex = new RegExp(`(${escapedQuery})`, "gi");
+  const parts = text.split(regex);
+
+  return (
+    <span>
+      {parts.map((part, index) =>
+        regex.test(part) ? (
+          <mark
+            key={index}
+            className="bg-yellow-400 text-slate-900 font-extrabold px-0.5 rounded-sm shadow-xs mx-0.5 animate-pulse"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </span>
+  );
+};
+
 export default function LogStreamModal({
   podName,
   namespace,
@@ -268,7 +302,7 @@ export default function LogStreamModal({
                             : "text-[#C2E7BF] hover:bg-[#123114]/60"
                       }`}
                   >
-                    {line}
+                    <HighlightedLogLine text={line} highlight={filterText} />
                   </div>
                 );
               })

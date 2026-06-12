@@ -10,7 +10,6 @@ import toast, { Toaster, useToasterStore } from "react-hot-toast";
 import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
 import WarningIcon from "@mui/icons-material/Warning";
 
-// TODO: add toast for successfully deploying a pod
 interface ClusterLog {
   ID: number;
   pod_name: string;
