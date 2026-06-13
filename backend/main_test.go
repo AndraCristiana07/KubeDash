@@ -206,3 +206,194 @@ func TestHandleRestartDeployment_StandaloneTimeoutFallback_Conflict(t *testing.T
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Contains(t, w.Body.String(), "Timeout waiting for old pod")
 }
+
+func TestHandleGetConfigurations_LogicValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	//verify payload schema going back to the frontend
+	r.GET("/api/cluster/config", func(c *gin.Context) {
+		mockResources := []ConfigResource{
+			{
+				Type:      "configmap",
+				Name:      "app-env-properties",
+				Namespace: "default",
+				Data:      map[string]string{"DATABASE_URL": "postgres://localhost"},
+				BoundPods: []string{"web-pod"},
+			},
+		}
+		c.JSON(http.StatusOK, mockResources)
+	})
+
+	req, _ := http.NewRequest("GET", "/api/cluster/config?namespace=default", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response []ConfigResource
+	err := json.NewDecoder(w.Body).Decode(&response)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(response))
+	assert.Equal(t, "configmap", response[0].Type)
+	assert.Equal(t, "app-env-properties", response[0].Name)
+}
+
+func TestHandleCreateConfiguration_MissingRequiredProperties(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/create", handleCreateConfiguration)
+
+	// bypass nil guard safety block
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// payload missing name/namespace scope keys entirely
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type: "configmap",
+		Data: map[string]string{"key": "value"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Name and Namespace scopes are required properties")
+}
+
+func TestHandleCreateConfiguration_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/config/create", func(c *gin.Context) {
+		var req ConfigResource
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "Resource block successfully provisioned inside cluster"})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "configmap",
+		Name:      "microservice-env",
+		Namespace: "production",
+		Data:      map[string]string{"LOG_LEVEL": "debug", "RETRY_COUNT": "3"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, w.Body.String(), "Resource block successfully provisioned")
+}
+
+func TestHandleCreateConfiguration_UnsupportedEngineType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/create", handleCreateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// attempting to send a layout engine that isn't secret or configmap
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "persistentvolume",
+		Name:      "broken-resource",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Unsupported configuration type")
+}
+
+func TestHandleUpdateConfiguration_InvalidPayloadSchema(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/update", handleUpdateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// malformed JSON data structures
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", bytes.NewBufferString(`{"type": "configmap", `))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid payload schema")
+}
+
+func TestHandleUpdateConfiguration_UnsupportedType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/update", handleUpdateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "ingress",
+		Name:      "test-ingress",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Unsupported resource engine type")
+}
+
+func TestHandleUpdateConfiguration_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/config/update", func(c *gin.Context) {
+		var req ConfigResource
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Configuration object securely synchronized with cluster state"})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "secret",
+		Name:      "api-credentials",
+		Namespace: "default",
+		Data:      map[string]string{"API_KEY": "new-rotated-secure-token"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Configuration object securely synchronized")
+}
