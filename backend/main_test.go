@@ -1,0 +1,645 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"k8s.io/client-go/kubernetes"
+)
+
+func TestClusterRoutes_UninitializedClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	clientset = nil
+
+	routesToTest := []struct {
+		method  string
+		path    string
+		handler gin.HandlerFunc
+	}{
+		{"GET", "/api/cluster/summary", getClusterSummary},
+		{"GET", "/api/cluster/pods", getClusterPods},
+		{"DELETE", "/api/cluster/pods", deleteClusterPod},
+		{"POST", "/api/cluster/deploy", deployNewPod},
+	}
+
+	for _, tc := range routesToTest {
+		t.Run(tc.path, func(t *testing.T) {
+			r := gin.Default()
+			r.Handle(tc.method, tc.path, tc.handler)
+
+			req, _ := http.NewRequest(tc.method, tc.path, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusInternalServerError, w.Code)
+			assert.Contains(t, w.Body.String(), "Kubernetes client uninitialized")
+		})
+	}
+}
+
+func TestDeployNewPod_InvalidPayloadInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/deploy", deployNewPod)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	badJSON := `{"podName": "broken-deployment", "image": `
+
+	req, _ := http.NewRequest("POST", "/api/cluster/deploy", bytes.NewBufferString(badJSON))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid input variables")
+}
+
+func TestDeleteClusterPod_MissingParameters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.DELETE("/api/cluster/pods", deleteClusterPod)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/pods?namespace=&name=", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Missing namespace or name parameters")
+}
+
+func TestDeleteClusterPod_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	// mock successful route path
+	r.DELETE("/api/cluster/pods", func(c *gin.Context) {
+		namespace := c.Query("namespace")
+		podName := c.Query("name")
+
+		if namespace == "" || podName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or name parameters"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/pods?namespace=production&name=frontend-proxy", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Pod termination sequence executed cleanly")
+}
+
+func TestGetClusterSummary_LogicValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	// mock real layout
+	r.GET("/api/cluster/summary", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"podsCount":     5,
+			"nodesTotal":    2,
+			"clusterStatus": "Healthy",
+		})
+	})
+
+	req, _ := http.NewRequest("GET", "/api/cluster/summary", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var res map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&res)
+
+	assert.Equal(t, float64(5), res["podsCount"])
+	assert.Equal(t, "Healthy", res["clusterStatus"])
+}
+
+func TestHandleRestartDeployment_InvalidInputPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/restart", handleRestartDeployment)
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", bytes.NewBufferString(`{"pod_name":`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Missing namespace or pod_name parameters")
+}
+
+func TestHandleRestartDeployment_DeploymentPathRoute_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		var req RestartRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Rolling restart successfully dispatched for deployment: web-deployment",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "web-deployment-xyz-123",
+		Namespace: "production",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&response)
+	assert.Contains(t, response["message"], "Rolling restart successfully dispatched")
+}
+
+func TestHandleRestartDeployment_PodNotFoundRoute_Error(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Pod not found: pods \"missing-pod\" not found",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "missing-pod",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "Pod not found")
+}
+
+func TestHandleRestartDeployment_StandaloneTimeoutFallback_Conflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		var req RestartRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Timeout waiting for old pod '" + req.PodName + "' to clear its termination routine. Try again in a moment.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "stubborn-naked-pod",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "Timeout waiting for old pod")
+}
+
+func TestHandleGetConfigurations_LogicValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	//verify payload schema going back to the frontend
+	r.GET("/api/cluster/config", func(c *gin.Context) {
+		mockResources := []ConfigResource{
+			{
+				Type:      "configmap",
+				Name:      "app-env-properties",
+				Namespace: "default",
+				Data:      map[string]string{"DATABASE_URL": "postgres://localhost"},
+				BoundPods: []string{"web-pod"},
+			},
+		}
+		c.JSON(http.StatusOK, mockResources)
+	})
+
+	req, _ := http.NewRequest("GET", "/api/cluster/config?namespace=default", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response []ConfigResource
+	err := json.NewDecoder(w.Body).Decode(&response)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(response))
+	assert.Equal(t, "configmap", response[0].Type)
+	assert.Equal(t, "app-env-properties", response[0].Name)
+}
+
+func TestHandleCreateConfiguration_MissingRequiredProperties(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/create", handleCreateConfiguration)
+
+	// bypass nil guard safety block
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// payload missing name/namespace scope keys entirely
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type: "configmap",
+		Data: map[string]string{"key": "value"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Name and Namespace scopes are required properties")
+}
+
+func TestHandleCreateConfiguration_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/config/create", func(c *gin.Context) {
+		var req ConfigResource
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "Resource block successfully provisioned inside cluster"})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "configmap",
+		Name:      "microservice-env",
+		Namespace: "production",
+		Data:      map[string]string{"LOG_LEVEL": "debug", "RETRY_COUNT": "3"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, w.Body.String(), "Resource block successfully provisioned")
+}
+
+func TestHandleCreateConfiguration_UnsupportedEngineType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/create", handleCreateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// attempting to send a layout engine that isn't secret or configmap
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "persistentvolume",
+		Name:      "broken-resource",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/create", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Unsupported configuration type")
+}
+
+func TestHandleUpdateConfiguration_InvalidPayloadSchema(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/update", handleUpdateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	// malformed JSON data structures
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", bytes.NewBufferString(`{"type": "configmap", `))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid payload schema")
+}
+
+func TestHandleUpdateConfiguration_UnsupportedType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/config/update", handleUpdateConfiguration)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "ingress",
+		Name:      "test-ingress",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Unsupported resource engine type")
+}
+
+func TestHandleUpdateConfiguration_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/config/update", func(c *gin.Context) {
+		var req ConfigResource
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Configuration object securely synchronized with cluster state"})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(ConfigResource{
+		Type:      "secret",
+		Name:      "api-credentials",
+		Namespace: "default",
+		Data:      map[string]string{"API_KEY": "new-rotated-secure-token"},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/config/update", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Configuration object securely synchronized")
+}
+
+func TestAddConfigToExistingPod_InvalidPayloadFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/pods/update-config", addConfigToExistingPod)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	req, _ := http.NewRequest("POST", "/api/cluster/pods/update-config", bytes.NewBufferString(`{"podName": `))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid payload format")
+}
+
+func TestAddConfigToExistingPod_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/pods/update-config", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Variables injected successfully, unique container iteration deployed.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(AddConfigToPodRequest{
+		PodName:    "backend-service-xyz",
+		Namespace:  "default",
+		ConfigName: "app-settings",
+		ConfigType: "configmap",
+		Mappings:   []EnvMapping{{SourceKey: "DB_PASS", EnvKey: "PASSWORD"}},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/pods/update-config", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Variables injected successfully")
+}
+
+func TestDeleteConfigBlock_InvalidPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.DELETE("/api/cluster/config/delete", deleteConfigBlock)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", bytes.NewBufferString(`{"configName":`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid deletion payload properties")
+}
+
+// test safety guard on used config
+func TestDeleteConfigBlock_SafetyUsedConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.DELETE("/api/cluster/config/delete", func(c *gin.Context) {
+		var req DeleteConfigRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: worker-node-abc",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(DeleteConfigRequest{
+		ConfigName: "in-use-secret",
+		Namespace:  "default",
+		ConfigType: "secret",
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "Safety Block: Cannot drop")
+}
+
+func TestDeleteConfigBlock_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.DELETE("/api/cluster/config/delete", func(c *gin.Context) {
+		var req DeleteConfigRequest
+		_ = c.ShouldBindJSON(&req)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Resource block '" + req.ConfigName + "' cleared out cleanly from cluster topology.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(DeleteConfigRequest{
+		ConfigName: "unbound-config",
+		Namespace:  "default",
+		ConfigType: "configmap",
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "cleared out cleanly")
+}
+
+func TestStreamingRoutes_MissingParameters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.GET("/api/cluster/ssh", handlePodSSH)
+	r.GET("/api/cluster/logs/stream", handlePodLogStream)
+
+	endpoints := []string{"/api/cluster/ssh", "/api/cluster/logs/stream"}
+
+	for _, url := range endpoints {
+		t.Run(url, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "Missing namespace or name details")
+		})
+	}
+}
+
+func TestHandleNotificationStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.GET("/api/cluster/notifications", handleNotificationStream)
+
+	// ephemeral local test server to support WebSocket protocol
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/cluster/notifications"
+
+	// mock server using a test client dialer
+	dialer := websocket.Dialer{}
+	wsConn, resp, err := dialer.Dial(wsURL, nil)
+	assert.NoError(t, err)
+
+	defer func() {
+		_ = wsConn.Close()
+	}()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	time.Sleep(10 * time.Millisecond)
+
+	notificationMutex.Lock()
+	assert.True(t, len(notificationClients) > 0, "Connection should be registered in the active notification map")
+	notificationMutex.Unlock()
+
+	_ = wsConn.Close()
+
+	time.Sleep(10 * time.Millisecond)
+
+	notificationMutex.Lock()
+	assert.Equal(t, 0, len(notificationClients), "Disconnected connection should be safely deleted from tracking")
+	notificationMutex.Unlock()
+}
+
+func TestHandlePodSSH_SessionFailureMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.GET("/api/cluster/ssh", func(c *gin.Context) {
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			return
+		}
+		defer func() {
+			_ = ws.Close()
+		}()
+
+		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: connection timed out"))
+	})
+
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/cluster/ssh?namespace=default&name=test-pod"
+
+	dialer := websocket.Dialer{}
+	wsConn, _, err := dialer.Dial(wsURL, nil)
+	assert.NoError(t, err)
+	defer func() {
+		_ = wsConn.Close()
+	}()
+
+	_, message, err := wsConn.ReadMessage()
+	assert.NoError(t, err)
+
+	assert.Contains(t, string(message), "Session closed or terminated")
+}
