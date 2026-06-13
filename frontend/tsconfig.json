@@ -9,7 +9,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noUncheckedSideEffectImports": false,
-    "types": ["node"]
+    "types": ["jest", "@testing-library/jest-dom", "node"]
   },
   "include": ["src/**/*"]
 }

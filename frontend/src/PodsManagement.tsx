@@ -9,7 +9,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import SearchIcon from "@mui/icons-material/Search";
 import WarningIcon from "@mui/icons-material/Warning";
 
-interface PodEntry {
+export interface PodEntry {
   name: string;
   namespace: string;
   status: string;
@@ -21,7 +21,7 @@ interface PodEntry {
   last_term_state?: string;
 }
 
-interface ClusterPodsTableProps {
+export interface ClusterPodsTableProps {
   clusterPods: PodEntry[];
   targetNamespace: string;
   isRestarting: string | null;
@@ -822,6 +822,7 @@ export default function ClusterPodsTable({
       </div>
       {/* bulk ops */}
       <div
+        data-testid="bulk-ops-bar"
         className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0D530E] border-2 border-[#306D29] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 transform transition-all duration-300 font-mono text-xs ${
           selectedPods.length > 0
             ? "translate-y-0 opacity-100 scale-100"
