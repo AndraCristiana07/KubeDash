@@ -104,3 +104,105 @@ func TestGetClusterSummary_LogicValidation(t *testing.T) {
 	assert.Equal(t, float64(5), res["podsCount"])
 	assert.Equal(t, "Healthy", res["clusterStatus"])
 }
+
+func TestHandleRestartDeployment_InvalidInputPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/restart", handleRestartDeployment)
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", bytes.NewBufferString(`{"pod_name":`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Missing namespace or pod_name parameters")
+}
+
+func TestHandleRestartDeployment_DeploymentPathRoute_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		var req RestartRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Rolling restart successfully dispatched for deployment: web-deployment",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "web-deployment-xyz-123",
+		Namespace: "production",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]string
+	_ = json.NewDecoder(w.Body).Decode(&response)
+	assert.Contains(t, response["message"], "Rolling restart successfully dispatched")
+}
+
+func TestHandleRestartDeployment_PodNotFoundRoute_Error(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Pod not found: pods \"missing-pod\" not found",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "missing-pod",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "Pod not found")
+}
+
+func TestHandleRestartDeployment_StandaloneTimeoutFallback_Conflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/restart", func(c *gin.Context) {
+		var req RestartRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Timeout waiting for old pod '" + req.PodName + "' to clear its termination routine. Try again in a moment.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(RestartRequest{
+		PodName:   "stubborn-naked-pod",
+		Namespace: "default",
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/restart", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "Timeout waiting for old pod")
+}
