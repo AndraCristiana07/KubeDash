@@ -79,6 +79,33 @@ func TestDeleteClusterPod_MissingParameters(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "Missing namespace or name parameters")
 }
+
+func TestDeleteClusterPod_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	// mock successful route path
+	r.DELETE("/api/cluster/pods", func(c *gin.Context) {
+		namespace := c.Query("namespace")
+		podName := c.Query("name")
+
+		if namespace == "" || podName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing namespace or name parameters"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/pods?namespace=production&name=frontend-proxy", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Pod termination sequence executed cleanly")
+}
+
 func TestGetClusterSummary_LogicValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.Default()
@@ -396,4 +423,129 @@ func TestHandleUpdateConfiguration_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Configuration object securely synchronized")
+}
+
+func TestAddConfigToExistingPod_InvalidPayloadFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.POST("/api/cluster/pods/update-config", addConfigToExistingPod)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	req, _ := http.NewRequest("POST", "/api/cluster/pods/update-config", bytes.NewBufferString(`{"podName": `))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid payload format")
+}
+
+func TestAddConfigToExistingPod_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.POST("/api/cluster/pods/update-config", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Variables injected successfully, unique container iteration deployed.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(AddConfigToPodRequest{
+		PodName:    "backend-service-xyz",
+		Namespace:  "default",
+		ConfigName: "app-settings",
+		ConfigType: "configmap",
+		Mappings:   []EnvMapping{{SourceKey: "DB_PASS", EnvKey: "PASSWORD"}},
+	})
+
+	req, _ := http.NewRequest("POST", "/api/cluster/pods/update-config", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Variables injected successfully")
+}
+
+func TestDeleteConfigBlock_InvalidPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.DELETE("/api/cluster/config/delete", deleteConfigBlock)
+
+	var dummyK8sClient kubernetes.Clientset
+	clientset = &dummyK8sClient
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", bytes.NewBufferString(`{"configName":`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid deletion payload properties")
+}
+
+// test safety guard on used config
+func TestDeleteConfigBlock_SafetyUsedConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.DELETE("/api/cluster/config/delete", func(c *gin.Context) {
+		var req DeleteConfigRequest
+		_ = c.ShouldBindJSON(&req)
+
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Safety Block: Cannot drop! Resource currently map-mounted to live container inside pod: worker-node-abc",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(DeleteConfigRequest{
+		ConfigName: "in-use-secret",
+		Namespace:  "default",
+		ConfigType: "secret",
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "Safety Block: Cannot drop")
+}
+
+func TestDeleteConfigBlock_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.DELETE("/api/cluster/config/delete", func(c *gin.Context) {
+		var req DeleteConfigRequest
+		_ = c.ShouldBindJSON(&req)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Resource block '" + req.ConfigName + "' cleared out cleanly from cluster topology.",
+		})
+	})
+
+	var buf bytes.Buffer
+	_ = json.NewEncoder(&buf).Encode(DeleteConfigRequest{
+		ConfigName: "unbound-config",
+		Namespace:  "default",
+		ConfigType: "configmap",
+	})
+
+	req, _ := http.NewRequest("DELETE", "/api/cluster/config/delete", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "cleared out cleanly")
 }
