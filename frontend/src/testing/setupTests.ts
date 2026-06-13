@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 
-// 1. Mock Global Fetch (Casting the partial object as a full Response)
+// mock Global Fetch (Casting the partial object as a full Response)
 global.fetch = jest.fn().mockImplementation(
   () =>
     Promise.resolve({
@@ -9,10 +9,10 @@ global.fetch = jest.fn().mockImplementation(
       json: () => Promise.resolve({}),
       text: () => Promise.resolve("{}"),
       headers: new Headers(),
-    } as Response), // <--- This cast tells TypeScript "trust me, this acts like a Response"
+    } as Response), // cast for TypeScript
 );
 
-// 2. Mock Global WebSocket
+// mock Global WebSocket
 global.WebSocket = jest.fn().mockImplementation(() => ({
   send: jest.fn(),
   close: jest.fn(),
@@ -24,9 +24,9 @@ global.WebSocket = jest.fn().mockImplementation(() => ({
   protocol: "",
   readyState: 0,
   url: "",
-})) as unknown as typeof WebSocket; // <--- Double cast to force TypeScript to accept it
+})) as unknown as typeof WebSocket;
 
-// 3. Mock Electron window object safely
+// mock Electron window object safely
 window.electron = {
   ipcRenderer: {
     send: jest.fn(),
