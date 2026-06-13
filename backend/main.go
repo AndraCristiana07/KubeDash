@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -228,7 +227,9 @@ func main() {
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
 	}
 
-	r.Run(":8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatalf("failed to start server: %v", err)
+	}
 }
 
 func watchPods() {
@@ -309,7 +310,7 @@ func broadcastToWebSockets(logEntry models.ClusterLog) {
 			err := client.WriteJSON(logEntry)
 			if err != nil {
 				log.Printf("Client disconnected or broke during write: %v", err)
-				client.Close()
+				_ = client.Close()
 				delete(notificationClients, client)
 			} else {
 				log.Printf("Successfully sent JSON packet payload over the socket pipe to browser!")
@@ -482,10 +483,10 @@ func getClusterPods(c *gin.Context) {
 	}
 	var podList []PodTableEntry
 	for _, pod := range pods.Items {
-		var image string = "unknown"
-		var deepMessage string = ""
+		image := "unknown"
+		deepMessage := ""
 		var restartCount int32 = 0
-		var lastTermState string = ""
+		lastTermState := ""
 
 		if len(pod.Status.ContainerStatuses) > 0 {
 			containerStatus := pod.Status.ContainerStatuses[0]
@@ -598,7 +599,9 @@ func handlePodSSH(c *gin.Context) {
 		log.Printf("Failed to upgrade socket connection: %v", err)
 		return
 	}
-	defer ws.Close()
+	defer func() {
+		_ = ws.Close()
+	}()
 
 	// native remote execution pipeline command (default to /bin/sh shell)
 	req := clientset.CoreV1().RESTClient().Post().
@@ -613,8 +616,12 @@ func handlePodSSH(c *gin.Context) {
 		Param("command", "/bin/sh")
 
 	executor, err := remotecommand.NewSPDYExecutor(k8sConfig, "POST", req.URL())
+
 	if err != nil {
-		ws.WriteMessage(websocket.TextMessage, []byte("\r\nExecution system failure: "+err.Error()))
+		log.Printf("Execution system failure: %v", err)
+
+		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nExecution system failure: "+err.Error()))
+
 		return
 	}
 
@@ -629,7 +636,11 @@ func handlePodSSH(c *gin.Context) {
 	})
 
 	if err != nil {
-		ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: "+err.Error()))
+		log.Printf("Session closed or terminated: %v", err)
+
+		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: "+err.Error()))
+
+		return
 	}
 }
 
@@ -648,7 +659,10 @@ func handlePodLogStream(c *gin.Context) {
 		log.Printf("Failed to upgrade log socket connection: %v", err)
 		return
 	}
-	defer ws.Close()
+
+	defer func() {
+		_ = ws.Close()
+	}()
 
 	// tail -f log optioms
 	lineLimit := int64(100) // last 100 from history
@@ -661,11 +675,18 @@ func handlePodLogStream(c *gin.Context) {
 	// request the stream
 	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, logOptions)
 	stream, err := req.Stream(c.Request.Context())
+
 	if err != nil {
-		ws.WriteMessage(websocket.TextMessage, []byte("Failed to open log stream: "+err.Error()))
+		log.Printf("Failed to open log stream: %v", err)
+
+		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nFailed to open log stream: "+err.Error()))
+
 		return
 	}
-	defer stream.Close()
+
+	defer func() {
+		_ = stream.Close()
+	}()
 
 	// read chunks from stream and push to WebSocker
 	buf := make([]byte, 4096)
@@ -702,7 +723,7 @@ func handleNotificationStream(c *gin.Context) {
 		notificationMutex.Lock()
 		delete(notificationClients, ws)
 		notificationMutex.Unlock()
-		ws.Close()
+		_ = ws.Close()
 		log.Println("Notification client connection cleaned up cleanly.")
 	}()
 
@@ -1229,7 +1250,7 @@ func broadcastMetricsInBackground() {
 		}
 
 		rawBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if err != nil {
 			log.Printf("⚠️ Failed to read metrics response body: %v\n", err)
@@ -1258,11 +1279,17 @@ func broadcastMetricsInBackground() {
 				if len(cpuStr) > 0 {
 					if strings.HasSuffix(cpuStr, "m") {
 						var millicores int64
-						fmt.Sscanf(cpuStr, "%dm", &millicores)
+						_, err := fmt.Sscanf(cpuStr, "%dm", &millicores)
+						if err != nil {
+							fmt.Print("No millicores")
+						}
 						totalCPU += millicores
 					} else if strings.HasSuffix(cpuStr, "n") {
 						var nanocores int64
-						fmt.Sscanf(cpuStr, "%dn", &nanocores)
+						_, err := fmt.Sscanf(cpuStr, "%dn", &nanocores)
+						if err != nil {
+							fmt.Print("No nanocores")
+						}
 						if nanocores > 0 && nanocores < 1000000 {
 							totalCPU += 1 // round up to 1
 						} else {
@@ -1274,7 +1301,10 @@ func broadcastMetricsInBackground() {
 				memStr := c.Usage.Memory
 				if len(memStr) > 0 {
 					var rawAmount int64
-					fmt.Sscanf(memStr, "%d", &rawAmount)
+					_, err := fmt.Sscanf(memStr, "%d", &rawAmount)
+					if err != nil {
+						fmt.Print("No rawAmount")
+					}
 					if strings.HasSuffix(memStr, "Ki") {
 						totalMem += rawAmount / 1024
 					} else if strings.HasSuffix(memStr, "Mi") {
@@ -1310,7 +1340,7 @@ func broadcastMetricsInBackground() {
 			for client := range notificationClients {
 				err := client.WriteJSON(envelope)
 				if err != nil {
-					client.Close()
+					_ = client.Close()
 					delete(notificationClients, client)
 				}
 			}
@@ -1487,41 +1517,4 @@ func getBoundPods(namespace string, resName string, resType string) []string {
 		return []string{}
 	}
 	return boundPods
-}
-
-func parseDCGMMetrics(nodeIP string) (int64, int64) {
-	resp, err := http.Get(fmt.Sprintf("http://%s:9400/metrics", nodeIP))
-	if err != nil {
-		return 0, 0
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, 0
-	}
-
-	var gpuUtil int64
-	var fbUsed int64
-
-	lines := strings.Split(string(body), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "DCGM_FI_DEV_GPU_UTIL") {
-			fields := strings.Fields(line)
-			if len(fields) == 2 {
-				if val, err := strconv.ParseFloat(fields[1], 64); err == nil {
-					gpuUtil = int64(val)
-				}
-			}
-		}
-		if strings.HasPrefix(line, "DCGM_FI_DEV_FB_USED") {
-			fields := strings.Fields(line)
-			if len(fields) == 2 {
-				if val, err := strconv.ParseFloat(fields[1], 64); err == nil {
-					fbUsed = int64(val)
-				}
-			}
-		}
-	}
-	return gpuUtil, fbUsed
 }

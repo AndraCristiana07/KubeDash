@@ -48,7 +48,7 @@ func ConnectDatabase() {
 		log.Fatalf("[DATABASE CRITICAL] Failed to allocate dynamic local port: %v", err)
 	}
 	localPort := listener.Addr().(*net.TCPAddr).Port
-	listener.Close() // release it immediately so the portforwarder can bind to it
+	_ = listener.Close() // release it immediately so the portforwarder can bind to it
 
 	log.Printf("[TUNNEL SETUP] Dynamic loopback selected: 127.0.0.1:%d\n", localPort)
 
@@ -56,8 +56,8 @@ func ConnectDatabase() {
 	dsn := fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable", localPort, dbUser, dbPassword, dbName)
 
 	go func() {
-		stopChan := make(chan struct{}, 1)
-		readyChan := make(chan struct{}, 1)
+		var stopChan chan struct{}
+		var readyChan chan struct{}
 
 		for {
 			if Clientset == nil || K8sConfig == nil {

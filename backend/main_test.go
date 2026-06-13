@@ -579,7 +579,7 @@ func TestHandleNotificationStream(t *testing.T) {
 	r := gin.Default()
 	r.GET("/api/cluster/notifications", handleNotificationStream)
 
-	// ephemeral local test server to support WebSocket protocol upgrading (ws://)
+	// ephemeral local test server to support WebSocket protocol
 	server := httptest.NewServer(r)
 	defer server.Close()
 
@@ -589,7 +589,10 @@ func TestHandleNotificationStream(t *testing.T) {
 	dialer := websocket.Dialer{}
 	wsConn, resp, err := dialer.Dial(wsURL, nil)
 	assert.NoError(t, err)
-	defer wsConn.Close()
+
+	defer func() {
+		_ = wsConn.Close()
+	}()
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
 	time.Sleep(10 * time.Millisecond)
@@ -598,7 +601,8 @@ func TestHandleNotificationStream(t *testing.T) {
 	assert.True(t, len(notificationClients) > 0, "Connection should be registered in the active notification map")
 	notificationMutex.Unlock()
 
-	wsConn.Close()
+	_ = wsConn.Close()
+
 	time.Sleep(10 * time.Millisecond)
 
 	notificationMutex.Lock()
@@ -615,7 +619,9 @@ func TestHandlePodSSH_SessionFailureMessage(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer ws.Close()
+		defer func() {
+			_ = ws.Close()
+		}()
 
 		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: connection timed out"))
 	})
@@ -628,7 +634,9 @@ func TestHandlePodSSH_SessionFailureMessage(t *testing.T) {
 	dialer := websocket.Dialer{}
 	wsConn, _, err := dialer.Dial(wsURL, nil)
 	assert.NoError(t, err)
-	defer wsConn.Close()
+	defer func() {
+		_ = wsConn.Close()
+	}()
 
 	_, message, err := wsConn.ReadMessage()
 	assert.NoError(t, err)
