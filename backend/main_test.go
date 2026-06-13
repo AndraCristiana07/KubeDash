@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/client-go/kubernetes"
 )
@@ -548,4 +551,87 @@ func TestDeleteConfigBlock_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "cleared out cleanly")
+}
+
+func TestStreamingRoutes_MissingParameters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.GET("/api/cluster/ssh", handlePodSSH)
+	r.GET("/api/cluster/logs/stream", handlePodLogStream)
+
+	endpoints := []string{"/api/cluster/ssh", "/api/cluster/logs/stream"}
+
+	for _, url := range endpoints {
+		t.Run(url, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "Missing namespace or name details")
+		})
+	}
+}
+
+func TestHandleNotificationStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	r.GET("/api/cluster/notifications", handleNotificationStream)
+
+	// ephemeral local test server to support WebSocket protocol upgrading (ws://)
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/cluster/notifications"
+
+	// mock server using a test client dialer
+	dialer := websocket.Dialer{}
+	wsConn, resp, err := dialer.Dial(wsURL, nil)
+	assert.NoError(t, err)
+	defer wsConn.Close()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	time.Sleep(10 * time.Millisecond)
+
+	notificationMutex.Lock()
+	assert.True(t, len(notificationClients) > 0, "Connection should be registered in the active notification map")
+	notificationMutex.Unlock()
+
+	wsConn.Close()
+	time.Sleep(10 * time.Millisecond)
+
+	notificationMutex.Lock()
+	assert.Equal(t, 0, len(notificationClients), "Disconnected connection should be safely deleted from tracking")
+	notificationMutex.Unlock()
+}
+
+func TestHandlePodSSH_SessionFailureMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+
+	r.GET("/api/cluster/ssh", func(c *gin.Context) {
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+
+		_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\nSession closed or terminated: connection timed out"))
+	})
+
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/cluster/ssh?namespace=default&name=test-pod"
+
+	dialer := websocket.Dialer{}
+	wsConn, _, err := dialer.Dial(wsURL, nil)
+	assert.NoError(t, err)
+	defer wsConn.Close()
+
+	_, message, err := wsConn.ReadMessage()
+	assert.NoError(t, err)
+
+	assert.Contains(t, string(message), "Session closed or terminated")
 }
