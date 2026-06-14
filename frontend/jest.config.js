@@ -10,4 +10,8 @@ module.exports = {
     ],
   },
   setupFilesAfterEnv: ["<rootDir>/src/testing/setupTests.ts"],
+  moduleNameMapper: {
+    // Identity mapping to stub out plain CSS stylesheets safely
+    "\\.css$": "<rootDir>/src/testing/mocks/styleMock.js",
+  },
 };
