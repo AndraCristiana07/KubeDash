@@ -6,13 +6,16 @@
   "scripts": {
     "build": "webpack",
     "start": "webpack && electron .",
-    "test": "jest --watchAll"
+    "test:unit": "jest --watchAll",
+    "test:e2e": "playwright test src/testing/e2e --config=playwright.config.ts",
+    "test:e2e:ui": "playwright test src/testing/e2e --ui --config=playwright.config.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

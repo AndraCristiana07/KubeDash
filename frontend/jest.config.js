@@ -1,17 +1,19 @@
 module.exports = {
   testEnvironment: "jsdom",
+  testMatch: ["<rootDir>/src/testing/*.test.{ts,tsx}"],
+  watchPathIgnorePatterns: ["<rootDir>/src/testing/e2e"],
+  modulePathIgnorePatterns: ["<rootDir>/src/testing/e2e"],
+
   transform: {
-    // Make sure the regex captures both ts and tsx extensions!
     "^.+\\.(ts|tsx)$": [
       "ts-jest",
       {
-        tsconfig: "tsconfig.json", // Ensures Jest reads your TSX configuration rules
+        tsconfig: "tsconfig.json",
       },
     ],
   },
   setupFilesAfterEnv: ["<rootDir>/src/testing/setupTests.ts"],
   moduleNameMapper: {
-    // Identity mapping to stub out plain CSS stylesheets safely
     "\\.css$": "<rootDir>/src/testing/mocks/styleMock.js",
   },
 };
