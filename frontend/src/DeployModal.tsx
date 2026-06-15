@@ -92,11 +92,14 @@ export default function DeployWorkloadModal({
               required
               placeholder="e.g., custom-web-server"
               value={newPodName}
-              onChange={(e) =>
-                setNewPodName(
-                  e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
-                )
-              }
+              onChange={(e) => {
+                const sanitizedValue = e.target.value
+                  .toLowerCase() // convert everything to lowercase
+                  .replace(/_/g, "-") // swap all underscores with dashes
+                  .replace(/[^a-z0-9-]/g, ""); // remove everything that isn't a letter, number, or dash
+
+                setNewPodName(sanitizedValue);
+              }}
               className="w-full bg-[#E7E1B1]/20 border border-[#E7E1B1] 
                     focus:border-[#306D29] text-[#0D530E] font-medium rounded-lg 
                     px-3 py-2 text-sm placeholder-slate-400 outline-none transition-all"

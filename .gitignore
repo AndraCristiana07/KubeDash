@@ -40,3 +40,5 @@ tmp/
 .air.toml
 
 */node_modules
+
+*/.test-profile

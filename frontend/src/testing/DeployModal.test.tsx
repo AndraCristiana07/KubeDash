@@ -53,7 +53,7 @@ describe("DeployWorkloadModal Component", () => {
     fireEvent.change(nameInput, { target: { value: "INVALID_Name#99" } });
 
     // it should be called with the cleaned string
-    expect(defaultProps.setNewPodName).toHaveBeenCalledWith("invalidname99");
+    expect(defaultProps.setNewPodName).toHaveBeenCalledWith("invalid-name99");
 
     // target the Container Image text box
     const imageInput = screen.getByPlaceholderText(
