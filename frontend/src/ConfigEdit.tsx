@@ -173,6 +173,7 @@ export default function InjectEnvMapsModal({
                         updated[idx].sourceKey = val;
                         updated[idx].envKey = val
                           .toUpperCase()
+                          .replace(/[-\s.]/g, "_")
                           .replace(/[^A-Z0-9_]/g, "");
                         setEditMappings(updated);
                       }}
@@ -203,6 +204,8 @@ export default function InjectEnvMapsModal({
                           const updated = [...editMappings];
                           updated[idx].envKey = e.target.value
                             .toUpperCase()
+                            .toUpperCase()
+                            .replace(/[-\s.]/g, "_")
                             .replace(/[^A-Z0-9_]/g, "");
                           setEditMappings(updated);
                         }}
