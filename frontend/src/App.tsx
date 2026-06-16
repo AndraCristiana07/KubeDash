@@ -173,6 +173,7 @@ export default function App() {
       const res = await fetch(
         `${GO_API}/api/cluster/config?namespace=${targetNamespace}`,
       );
+
       if (res.ok) {
         const data = await res.json();
         setConfigs(data || []);
