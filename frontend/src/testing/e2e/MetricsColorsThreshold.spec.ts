@@ -46,8 +46,8 @@ test("Verify UI progress bar colors based on levels", async () => {
             data: {
               pod_name: "pod-safe-level",
               namespace: "production",
-              cpu_usage: 400, // Low Percentage Level: <= 50%
-              mem_usage: 200, // Low Percentage Level: <= 50%
+              cpu_usage: 400, // low level: <= 50%
+              mem_usage: 200, // low level: <= 50%
               gpu_usage: 0,
             },
           },
@@ -56,8 +56,8 @@ test("Verify UI progress bar colors based on levels", async () => {
             data: {
               pod_name: "pod-warn-level",
               namespace: "production",
-              cpu_usage: 1300, // Warning Percentage Level: 51% - 80%
-              mem_usage: 650, // Warning Percentage Level: 51% - 80%
+              cpu_usage: 1300, // Warning level: 51% - 80%
+              mem_usage: 650, // Warning level: 51% - 80%
               gpu_usage: 0,
             },
           },
@@ -66,8 +66,8 @@ test("Verify UI progress bar colors based on levels", async () => {
             data: {
               pod_name: "pod-crit-level",
               namespace: "production",
-              cpu_usage: 1900, // Critical Level: > 80%
-              mem_usage: 950, // Critical Level: > 80%
+              cpu_usage: 1900, // Critical level: > 80%
+              mem_usage: 950, // Critical level: > 80%
               gpu_usage: 0,
             },
           },
