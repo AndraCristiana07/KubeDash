@@ -101,7 +101,9 @@ test("Verify metrics data grid goes to no metrics found when searching non exist
   await expect(dataRowItem).toBeHidden();
 
   // locate no match text
-  const noMatchMsg = page.locator("text=No matching pods rows found").first();
+  const noMatchMsg = page
+    .locator("text=No matching resource rows found")
+    .first();
 
   await expect(noMatchMsg).toBeVisible({ timeout: 5000 });
 
