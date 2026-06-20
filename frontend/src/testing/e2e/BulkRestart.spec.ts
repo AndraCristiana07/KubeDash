@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 
-test("Verify batch checkbox selects all visible workloads and fires bulk deletion", async () => {
+test("Verify batch checkbox selects all visible workloads and fires bulk restart", async () => {
   const electronApp = await electron.launch({
     args: [
       ".",
@@ -17,32 +17,24 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   const page = await electronApp.firstWindow();
 
+  // mock running pods
   let mockPodsList = [
     {
-      name: "batch-pod-alpha",
-      namespace: "production",
+      name: "restart-pod-one",
+      namespace: "staging",
       status: "Running",
       image: "nginx",
       restart_count: 0,
-      age_seconds: 300,
+      age_seconds: 600,
       linked_configs: [],
     },
     {
-      name: "batch-pod-beta",
-      namespace: "production",
+      name: "restart-pod-two",
+      namespace: "staging",
       status: "Running",
       image: "redis",
       restart_count: 0,
-      age_seconds: 400,
-      linked_configs: [],
-    },
-    {
-      name: "batch-pod-omega",
-      namespace: "production",
-      status: "Running",
-      image: "node",
-      restart_count: 0,
-      age_seconds: 500,
+      age_seconds: 700,
       linked_configs: [],
     },
   ];
@@ -51,18 +43,18 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
   await page.route(/\/api\/cluster\/pods/, async (route) => {
     const method = route.request().method();
 
-    if (method === "DELETE") {
-      const requestData = route.request().postDataJSON();
-      console.log("Captured Batch Deletion Payload:", requestData);
-
-      mockPodsList = [];
+    if (method === "POST" || method === "PUT") {
+      mockPodsList = mockPodsList.map((pod) => ({
+        ...pod,
+        restart_count: pod.restart_count + 1,
+      }));
 
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           success: true,
-          message: "Batch resources evicted cleanly",
+          message: "Orchestration lifecycle signaled",
         }),
       });
     } else {
@@ -79,13 +71,14 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        podsCount: mockPodsList.length,
+        podsCount: 2,
         nodesTotal: 1,
         clusterStatus: "Healthy",
       }),
     });
   });
 
+  // mock websocket
   await page.addInitScript(() => {
     window.confirm = () => true;
     (window as any).WebSocket = function (url: string) {
@@ -105,49 +98,48 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector("body");
 
-  // navigate to pods page
+  // navigate to pods management page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await podsTabButton.click();
 
-  const firstRow = page
+  // locate pod row
+  const podOneRow = page
     .locator("tr")
-    .filter({ hasText: "batch-pod-alpha" })
+    .filter({ hasText: "restart-pod-one" })
     .first();
-  await expect(firstRow).toBeVisible({ timeout: 5000 });
+  await expect(podOneRow).toBeVisible({ timeout: 5000 });
 
   // locate and click master checkbox
   const masterCheckbox = page
     .locator("thead input[type='checkbox'], th input[type='checkbox']")
     .first();
-  await expect(masterCheckbox).toBeVisible();
-
   await masterCheckbox.click();
   await page.waitForTimeout(150);
 
-  const rowCheckboxes = page.locator("tbody input[type='checkbox']");
-  const checkedCount = await rowCheckboxes.evaluateAll(
-    (inputs: HTMLInputElement[]) =>
-      inputs.filter((input) => input.checked).length,
+  // check bulk ops bar appears correctly
+  const bulkOpsBar = page.locator("[data-testid='bulk-ops-bar']");
+  await expect(bulkOpsBar).toBeVisible({ timeout: 3000 });
+  await expect(bulkOpsBar).toContainText("2");
+  await expect(bulkOpsBar).toContainText("Workloads Staged");
+
+  const bulkRestartButton = bulkOpsBar.locator(
+    "button:has-text('Bulk Restart')",
+  );
+  await expect(bulkRestartButton).toBeVisible();
+  await bulkRestartButton.click();
+
+  // check success toast appears on screen with correct messsage
+  const successToastText = page.locator(
+    "span:has-text('Successfully signaled orchestration cycles for pods!')",
+  );
+  await expect(successToastText).toBeVisible({ timeout: 4000 });
+  console.log(
+    "Verified: Custom bulk success notification mounted cleanly onto the screen layout window.",
   );
 
-  expect(checkedCount).toBe(3);
-
-  const bulkDeleteButton = page
-    .locator("button:has-text('Mass Delete')")
-    .first();
-
-  await expect(bulkDeleteButton).toBeVisible({ timeout: 3000 });
-
-  await bulkDeleteButton.click();
-  await page.waitForTimeout(300);
-  // pods should be deleted
-  await expect(firstRow).toBeHidden({ timeout: 5000 });
-  await expect(
-    page.locator("tr").filter({ hasText: "batch-pod-beta" }).first(),
-  ).toBeHidden();
-  await expect(
-    page.locator("tr").filter({ hasText: "batch-pod-omega" }).first(),
-  ).toBeHidden();
+  await expect(bulkOpsBar).toHaveClass(/opacity-0/);
+  await expect(bulkOpsBar).toHaveClass(/pointer-events-none/);
+  await expect(bulkOpsBar).toHaveClass(/translate-y-20/);
 
   await electronApp.close();
 });

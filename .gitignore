@@ -39,6 +39,13 @@ Thumbs.db
 tmp/
 .air.toml
 
-*/node_modules
 
 */.test-profile
+
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-reports/
+
+**/core.*
+*.log
+**/node_modules/
