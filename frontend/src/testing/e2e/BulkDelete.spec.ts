@@ -109,6 +109,8 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await podsTabButton.click({ force: true });
 
+  await expect(page.locator("tbody tr")).toHaveCount(3, { timeout: 10000 });
+
   const firstRow = page
     .locator("tr")
     .filter({ hasText: "batch-pod-alpha" })
@@ -123,9 +125,11 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   // await masterCheckbox.click();
   await masterCheckbox.click({ force: true });
-  await page.waitForTimeout(150);
+  // await page.waitForTimeout(150);
 
   const rowCheckboxes = page.locator("tbody input[type='checkbox']");
+  await expect(rowCheckboxes.first()).toBeChecked({ timeout: 5000 });
+
   const checkedCount = await rowCheckboxes.evaluateAll(
     (inputs: HTMLInputElement[]) =>
       inputs.filter((input) => input.checked).length,
@@ -139,16 +143,20 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   await expect(bulkDeleteButton).toBeVisible({ timeout: 3000 });
 
+  // force Playwright to scroll the element fully into the viewport
+  // container before executing click
+  await bulkDeleteButton.scrollIntoViewIfNeeded();
   await bulkDeleteButton.click({ force: true });
-  await page.waitForTimeout(300);
-  // pods should be deleted
-  await expect(firstRow).toBeHidden({ timeout: 5000 });
+
+  await expect(firstRow).toBeHidden({ timeout: 10000 });
+
   await expect(
     page.locator("tr").filter({ hasText: "batch-pod-beta" }).first(),
-  ).toBeHidden();
+  ).toBeHidden({ timeout: 5000 });
+
   await expect(
     page.locator("tr").filter({ hasText: "batch-pod-omega" }).first(),
-  ).toBeHidden();
+  ).toBeHidden({ timeout: 5000 });
 
   await electronApp.close();
 });
