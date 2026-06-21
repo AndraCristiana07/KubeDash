@@ -102,6 +102,9 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await podsTabButton.click({ force: true });
 
+  // enforce total row count
+  await expect(page.locator("tbody tr")).toHaveCount(2, { timeout: 10000 });
+
   // locate pod row
   const podOneRow = page
     .locator("tr")
@@ -114,11 +117,13 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     .locator("thead input[type='checkbox'], th input[type='checkbox']")
     .first();
   await masterCheckbox.click({ force: true });
-  await page.waitForTimeout(150);
+
+  const rowCheckboxes = page.locator("tbody input[type='checkbox']");
+  await expect(rowCheckboxes.first()).toBeChecked({ timeout: 5000 });
 
   // check bulk ops bar appears correctly
   const bulkOpsBar = page.locator("[data-testid='bulk-ops-bar']");
-  await expect(bulkOpsBar).toBeVisible({ timeout: 3000 });
+  await expect(bulkOpsBar).toBeVisible({ timeout: 5000 });
   await expect(bulkOpsBar).toContainText("2");
   await expect(bulkOpsBar).toContainText("Workloads Staged");
 
@@ -126,6 +131,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     "button:has-text('Bulk Restart')",
   );
   await expect(bulkRestartButton).toBeVisible();
+  await bulkRestartButton.scrollIntoViewIfNeeded();
   await bulkRestartButton.click({ force: true });
 
   // check success toast appears on screen with correct messsage
@@ -137,9 +143,10 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     "Verified: Custom bulk success notification mounted cleanly onto the screen layout window.",
   );
 
-  await expect(bulkOpsBar).toHaveClass(/opacity-0/);
-  await expect(bulkOpsBar).toHaveClass(/pointer-events-none/);
-  await expect(bulkOpsBar).toHaveClass(/translate-y-20/);
-
+  await expect(bulkOpsBar).toHaveClass(/opacity-0/, { timeout: 5000 });
+  await expect(bulkOpsBar).toHaveClass(/pointer-events-none/, {
+    timeout: 5000,
+  });
+  await expect(bulkOpsBar).toHaveClass(/translate-y-20/, { timeout: 5000 });
   await electronApp.close();
 });
