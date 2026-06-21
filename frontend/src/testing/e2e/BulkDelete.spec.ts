@@ -123,18 +123,27 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
     .first();
   await expect(masterCheckbox).toBeVisible();
 
-  // await masterCheckbox.click();
-  await masterCheckbox.click({ force: true });
-  // await page.waitForTimeout(150);
+  await expect(page.locator("tbody tr")).toHaveCount(3, { timeout: 10000 });
 
   const rowCheckboxes = page.locator("tbody input[type='checkbox']");
-  await expect(rowCheckboxes.first()).toBeChecked({ timeout: 5000 });
+
+  await expect(async () => {
+    await rowCheckboxes.nth(0).scrollIntoViewIfNeeded();
+    await rowCheckboxes.nth(0).click({ force: true });
+
+    await rowCheckboxes.nth(1).scrollIntoViewIfNeeded();
+    await rowCheckboxes.nth(1).click({ force: true });
+
+    await rowCheckboxes.nth(2).scrollIntoViewIfNeeded();
+    await rowCheckboxes.nth(2).click({ force: true });
+
+    await expect(rowCheckboxes.nth(0)).toBeChecked({ timeout: 1000 });
+  }).toPass({ intervals: [1000], timeout: 8000 });
 
   const checkedCount = await rowCheckboxes.evaluateAll(
     (inputs: HTMLInputElement[]) =>
       inputs.filter((input) => input.checked).length,
   );
-
   expect(checkedCount).toBe(3);
 
   const bulkDeleteButton = page

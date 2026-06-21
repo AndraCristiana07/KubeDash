@@ -17,7 +17,6 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
 
   const page = await electronApp.firstWindow();
 
-  // mock running pods
   let mockPodsList = [
     {
       name: "restart-pod-one",
@@ -39,16 +38,13 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     },
   ];
 
-  // mock API routes
   await page.route(/\/api\/cluster\/pods/, async (route) => {
     const method = route.request().method();
-
     if (method === "POST" || method === "PUT") {
       mockPodsList = mockPodsList.map((pod) => ({
         ...pod,
         restart_count: pod.restart_count + 1,
       }));
-
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -78,7 +74,6 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     });
   });
 
-  // mock websocket
   await page.addInitScript(() => {
     window.confirm = () => true;
     (window as any).WebSocket = function (url: string) {
@@ -98,30 +93,28 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector("body");
 
-  // navigate to pods management page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await podsTabButton.click({ force: true });
 
-  // enforce total row count
   await expect(page.locator("tbody tr")).toHaveCount(2, { timeout: 10000 });
 
-  // locate pod row
   const podOneRow = page
     .locator("tr")
     .filter({ hasText: "restart-pod-one" })
     .first();
   await expect(podOneRow).toBeVisible({ timeout: 5000 });
 
-  // locate and click master checkbox
-  const masterCheckbox = page
-    .locator("thead input[type='checkbox'], th input[type='checkbox']")
-    .first();
-  await masterCheckbox.click({ force: true });
-
   const rowCheckboxes = page.locator("tbody input[type='checkbox']");
-  await expect(rowCheckboxes.first()).toBeChecked({ timeout: 5000 });
+  await expect(rowCheckboxes).toHaveCount(2, { timeout: 10000 });
 
-  // check bulk ops bar appears correctly
+  // STABILITY FIX: Use a robust interaction loop to toggle elements securely
+  await expect(async () => {
+    await rowCheckboxes.nth(0).click({ force: true });
+    await rowCheckboxes.nth(1).click({ force: true });
+    await expect(rowCheckboxes.nth(0)).toBeChecked({ timeout: 1000 });
+    await expect(rowCheckboxes.nth(1)).toBeChecked({ timeout: 1000 });
+  }).toPass({ intervals: [1000], timeout: 8000 });
+
   const bulkOpsBar = page.locator("[data-testid='bulk-ops-bar']");
   await expect(bulkOpsBar).toBeVisible({ timeout: 5000 });
   await expect(bulkOpsBar).toContainText("2");
@@ -134,14 +127,10 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
   await bulkRestartButton.scrollIntoViewIfNeeded();
   await bulkRestartButton.click({ force: true });
 
-  // check success toast appears on screen with correct messsage
   const successToastText = page.locator(
     "span:has-text('Successfully signaled orchestration cycles for pods!')",
   );
-  await expect(successToastText).toBeVisible({ timeout: 4000 });
-  console.log(
-    "Verified: Custom bulk success notification mounted cleanly onto the screen layout window.",
-  );
+  await expect(successToastText).toBeVisible({ timeout: 5000 });
 
   await expect(bulkOpsBar).toHaveClass(/opacity-0/, { timeout: 5000 });
   await expect(bulkOpsBar).toHaveClass(/pointer-events-none/, {

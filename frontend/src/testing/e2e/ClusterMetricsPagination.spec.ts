@@ -168,7 +168,7 @@ test("Verify metrics dashboard pagination works", async () => {
             if (typeof self.onmessage === "function") {
               self.onmessage({ data: JSON.stringify(frame) });
             }
-          }, idx * 10);
+          }, idx * 60);
         });
       }, 50);
 
@@ -184,8 +184,14 @@ test("Verify metrics dashboard pagination works", async () => {
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
   await metricsTabButton.click({ force: true });
 
-  const metricsTable = page.locator("table, div:has-text('Namespace')").last();
-  await expect(metricsTable).toBeVisible({ timeout: 10000 });
+  const targetCell = page.locator("td:has-text('pod-low-cpu')").first();
+  await expect(targetCell).toBeAttached({ timeout: 15000 });
+
+  const metricsTable = page
+    .locator("table")
+    .filter({ hasText: "Namespace" })
+    .first();
+  await expect(metricsTable).toBeAttached();
 
   // confirm pagination labels split correctly
   const paginationLabel = page.locator("text=/Showing 1-10 of 12/i").first();
@@ -206,7 +212,8 @@ test("Verify metrics dashboard pagination works", async () => {
   await expect(page.locator("text=/PAGE 2 OF 2/i").first()).toBeAttached();
   await expect(page.locator("tbody tr")).toHaveCount(2);
 
-  // return back to page 1
+  // return to page 1
+  await prevButton.scrollIntoViewIfNeeded();
   await prevButton.click({ force: true });
   await expect(page.locator("text=/PAGE 1 OF 2/i").first()).toBeAttached();
   await expect(page.locator("tbody tr")).toHaveCount(10);
