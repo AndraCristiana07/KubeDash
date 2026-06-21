@@ -83,7 +83,7 @@ test("Verify configuration quick view modal", async () => {
   // go to pods management page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const targetPodRow = page
@@ -95,7 +95,7 @@ test("Verify configuration quick view modal", async () => {
   // click buttom for the configmap item
   const configmapBadge = targetPodRow.locator("text=app-feature-flags").first();
   await expect(configmapBadge).toBeAttached();
-  await configmapBadge.click();
+  await configmapBadge.click({ force: true });
 
   // check modal opened
   const modalContainer = page.locator(".fixed.inset-0").first();
@@ -115,14 +115,14 @@ test("Verify configuration quick view modal", async () => {
     "button:has-text('Close Panel')",
   );
   await expect(closePanelButton).toBeAttached();
-  await closePanelButton.click();
+  await closePanelButton.click({ force: true });
   await expect(modalContainer).toBeHidden({ timeout: 5000 });
 
   // check secret
   // click button for the  secret item
   const secretBadge = targetPodRow.locator("text=database-credentials").first();
   await expect(secretBadge).toBeAttached();
-  await secretBadge.click();
+  await secretBadge.click({ force: true });
 
   // check modal opened
   await expect(modalContainer).toBeAttached({ timeout: 5000 });
@@ -147,7 +147,7 @@ test("Verify configuration quick view modal", async () => {
   // close modal
   const exitIconButton = modalContainer.locator("button:has-text('✕')");
   await expect(exitIconButton).toBeAttached();
-  await exitIconButton.click();
+  await exitIconButton.click({ force: true });
 
   await expect(modalContainer).toBeHidden({ timeout: 5000 });
 

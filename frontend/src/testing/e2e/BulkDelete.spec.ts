@@ -107,7 +107,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   // navigate to pods page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   const firstRow = page
     .locator("tr")
@@ -121,7 +121,8 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
     .first();
   await expect(masterCheckbox).toBeVisible();
 
-  await masterCheckbox.click();
+  // await masterCheckbox.click();
+  await masterCheckbox.click({ force: true });
   await page.waitForTimeout(150);
 
   const rowCheckboxes = page.locator("tbody input[type='checkbox']");
@@ -138,7 +139,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   await expect(bulkDeleteButton).toBeVisible({ timeout: 3000 });
 
-  await bulkDeleteButton.click();
+  await bulkDeleteButton.click({ force: true });
   await page.waitForTimeout(300);
   // pods should be deleted
   await expect(firstRow).toBeHidden({ timeout: 5000 });

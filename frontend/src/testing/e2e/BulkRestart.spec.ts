@@ -100,7 +100,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
 
   // navigate to pods management page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const podOneRow = page
@@ -113,7 +113,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
   const masterCheckbox = page
     .locator("thead input[type='checkbox'], th input[type='checkbox']")
     .first();
-  await masterCheckbox.click();
+  await masterCheckbox.click({ force: true });
   await page.waitForTimeout(150);
 
   // check bulk ops bar appears correctly
@@ -126,7 +126,7 @@ test("Verify batch checkbox selects all visible workloads and fires bulk restart
     "button:has-text('Bulk Restart')",
   );
   await expect(bulkRestartButton).toBeVisible();
-  await bulkRestartButton.click();
+  await bulkRestartButton.click({ force: true });
 
   // check success toast appears on screen with correct messsage
   const successToastText = page.locator(

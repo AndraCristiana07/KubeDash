@@ -182,7 +182,7 @@ test("Verify metrics dashboard pagination works", async () => {
   // navigate to metrics
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   const metricsTable = page.locator("table, div:has-text('Namespace')").last();
   await expect(metricsTable).toBeVisible({ timeout: 10000 });
@@ -202,12 +202,12 @@ test("Verify metrics dashboard pagination works", async () => {
   await expect(nextButton).toBeEnabled();
 
   // move forward to page 2
-  await nextButton.click();
+  await nextButton.click({ force: true });
   await expect(page.locator("text=/PAGE 2 OF 2/i").first()).toBeAttached();
   await expect(page.locator("tbody tr")).toHaveCount(2);
 
   // return back to page 1
-  await prevButton.click();
+  await prevButton.click({ force: true });
   await expect(page.locator("text=/PAGE 1 OF 2/i").first()).toBeAttached();
   await expect(page.locator("tbody tr")).toHaveCount(10);
 

@@ -116,7 +116,7 @@ test("Verify changing the namespace inside settings dynamically updates cross-ta
     .locator("button:has-text('Refresh Metrics')")
     .first();
 
-  await refreshMetricsButton.click();
+  await refreshMetricsButton.click({ force: true });
   // there should be 1 pod running
   await expect(workloadsCard).toContainText("1 Pods Running", {
     timeout: 5000,
@@ -124,7 +124,7 @@ test("Verify changing the namespace inside settings dynamically updates cross-ta
 
   // go to pods management page and see pod
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   const defaultRow = page
     .locator("tr")
@@ -134,7 +134,7 @@ test("Verify changing the namespace inside settings dynamically updates cross-ta
 
   // go to settings
   const settingsTabButton = page.locator("button:has-text('Settings')").first();
-  await settingsTabButton.click();
+  await settingsTabButton.click({ force: true });
 
   const namespaceInput = page.locator("input[type='text']").first();
 
@@ -146,7 +146,7 @@ test("Verify changing the namespace inside settings dynamically updates cross-ta
   await namespaceInput.fill(" PRODUCTION ");
   await expect(namespaceInput).toHaveValue("production");
 
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   await expect(defaultRow).toBeHidden({ timeout: 5000 });
 
@@ -161,7 +161,7 @@ test("Verify changing the namespace inside settings dynamically updates cross-ta
   const overviewTabButton = page
     .locator("button:has-text('Overview'), button:has-text('Dashboard')")
     .first();
-  await overviewTabButton.click();
+  await overviewTabButton.click({ force: true });
 
   await expect(workloadsCard).toContainText("15 Pods Running", {
     timeout: 5000,

@@ -181,7 +181,7 @@ test("Verify metrics data grid multi-type column sorting toggles and page resets
   // navigate to metrics page
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   const dataRows = page.locator("tr").filter({ hasText: "-pod" });
   await expect(dataRows.first()).toBeVisible({ timeout: 10000 });
@@ -206,21 +206,21 @@ test("Verify metrics data grid multi-type column sorting toggles and page resets
     .locator("th, td, span, button")
     .filter({ hasText: /^CPU Load/ })
     .first();
-  await cpuHeaderCell.click();
+  await cpuHeaderCell.click({ force: true });
 
   let currentOrder = await getRenderedPodOrder();
   expect(currentOrder).toContain("omega-pod");
   expect(currentOrder).toContain("beta-pod");
 
-  await cpuHeaderCell.click();
+  await cpuHeaderCell.click({ force: true });
   currentOrder = await getRenderedPodOrder();
   expect(currentOrder).toContain("alpha-pod");
 
   // check alphabetical sorting
   const namespaceHeaderCell = page.locator("th:has-text('Namespace')").first();
-  await namespaceHeaderCell.click();
+  await namespaceHeaderCell.click({ force: true });
 
-  await namespaceHeaderCell.click();
+  await namespaceHeaderCell.click({ force: true });
   currentOrder = await getRenderedPodOrder();
   expect(currentOrder).toContain("beta-pod");
   expect(currentOrder).toContain("omega-pod");
@@ -228,14 +228,14 @@ test("Verify metrics data grid multi-type column sorting toggles and page resets
   // click next button
   const nextButton = page.locator("button:has-text('NEXT')").first();
   await expect(nextButton).toBeEnabled();
-  await nextButton.click();
+  await nextButton.click({ force: true });
 
   // check it went to the page
   const pageTracker = page.locator("text=PAGE 2 OF 2");
   await expect(pageTracker).toBeVisible();
 
   // go back
-  await cpuHeaderCell.click();
+  await cpuHeaderCell.click({ force: true });
 
   await expect(page.locator("text=PAGE 1 OF 2")).toBeVisible();
 

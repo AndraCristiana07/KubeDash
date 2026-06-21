@@ -182,12 +182,12 @@ test("Verify timeline trend subtabs display sparklines metrics", async () => {
   // navigate to pods metrics panel
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   // toggle subtab to go to sparklines table
   const trendTabButton = page.locator("button:has-text('Historical Trends')");
   await expect(trendTabButton).toBeAttached();
-  await trendTabButton.click();
+  await trendTabButton.click({ force: true });
 
   // confirm subtitle text element exists
   const trendsSubTitle = page

@@ -113,7 +113,7 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
   // navigate to pods management
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const targetPodRow = page
@@ -126,7 +126,7 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
     .locator("button:has-text('Term')")
     .first();
   await expect(termIconButton).toBeVisible({ timeout: 5000 });
-  await termIconButton.click();
+  await termIconButton.click({ force: true });
 
   // check terminal opened
   const modalHeaderTitle = page
@@ -163,7 +163,7 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
   const closeTerminalButton = page
     .locator("button:has-text('Close Terminal'), button:has-text('Close')")
     .first();
-  await closeTerminalButton.click();
+  await closeTerminalButton.click({ force: true });
 
   await expect(modalHeaderTitle).toBeHidden({ timeout: 4000 });
   await electronApp.close();

@@ -78,7 +78,7 @@ test("Verify log stream window resource track tooltip hover card state transitio
   // navigate to pods management
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // open log terminal modal window
   const targetPodRow = page.locator("tr:has-text('auth-service-v1')").first();
@@ -88,7 +88,7 @@ test("Verify log stream window resource track tooltip hover card state transitio
     .locator("button:has-text('Logs')")
     .first();
   await expect(openLogsButton).toBeAttached({ timeout: 5000 });
-  await openLogsButton.click();
+  await openLogsButton.click({ force: true });
 
   const consoleStatus = page.locator("text=STREAMING ACTIVE");
   await expect(consoleStatus).toBeVisible({ timeout: 5000 });

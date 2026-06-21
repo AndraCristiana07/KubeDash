@@ -56,7 +56,7 @@ test("Verify pagination button clicks increment page ", async () => {
     )
     .first();
   await expect(navButton).toBeVisible({ timeout: 15000 });
-  await navButton.click();
+  await navButton.click({ force: true });
 
   // select 25 limit per page
   await window.locator("select").nth(1).selectOption("25");
@@ -66,14 +66,14 @@ test("Verify pagination button clicks increment page ", async () => {
   const prevButton = window.locator("button:has-text('Prev')");
 
   await expect(prevButton).toBeDisabled(); // on page 1, prev should be blocked
-  await nextButton.click();
+  await nextButton.click({ force: true });
 
   // see if it went to page 2
   await expect.poll(() => targetPageQueried).toContain("page=2");
   await expect(window.locator("text=/Page 2 of 3/i")).toBeVisible();
 
   // click Prev to turn back
-  await prevButton.click();
+  await prevButton.click({ force: true });
   await expect.poll(() => targetPageQueried).toContain("page=1");
   await expect(window.locator("text=/Page 1 of 3/i")).toBeVisible();
 

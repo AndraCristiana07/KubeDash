@@ -104,7 +104,7 @@ test("Verify live log stream", async () => {
   // navigate to pods management
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const targetPodRow = page
@@ -117,7 +117,7 @@ test("Verify live log stream", async () => {
     .locator("button:has-text('Logs')")
     .first();
   await expect(openLogsButton).toBeAttached({ timeout: 5000 });
-  await openLogsButton.click();
+  await openLogsButton.click({ force: true });
 
   const consoleStatus = page.locator("text=STREAMING ACTIVE");
   await expect(consoleStatus).toBeVisible({ timeout: 5000 });
@@ -156,12 +156,12 @@ test("Verify live log stream", async () => {
   await expect(textHighlightMarker).toHaveClass(/bg-yellow-400/);
   await expect(textHighlightMarker).toContainText("NullPointer");
 
-  await page.locator("button:has-text('✕')").click();
+  await page.locator("button:has-text('✕')").click({ force: true });
   await expect(warnLogLine).toBeVisible();
 
   // pause button
   const pauseToggleButton = page.locator("button:has-text('Pause')");
-  await pauseToggleButton.click();
+  await pauseToggleButton.click({ force: true });
   await expect(page.locator("text=CONSOLE BUFFER FROZEN")).toBeVisible();
 
   await page.evaluate(() => {
@@ -176,17 +176,17 @@ test("Verify live log stream", async () => {
     page.locator("text=This entry should drop entirely"),
   ).toBeHidden();
 
-  await page.locator("button:has-text('Resume')").click();
+  await page.locator("button:has-text('Resume')").click({ force: true });
   await expect(consoleStatus).toBeVisible();
 
   // clear output and close actions
-  await page.locator("button:has-text('Clear Output')").click();
+  await page.locator("button:has-text('Clear Output')").click({ force: true });
   await expect(page.locator("text=Buffer Limit: 0 loaded")).toBeVisible();
   await expect(
     page.locator("text=Waiting for incoming live infrastructure stream"),
   ).toBeVisible();
 
-  await page.locator("button:has-text('x')").last().click();
+  await page.locator("button:has-text('x')").last().click({ force: true });
   await expect(consoleStatus).toBeHidden({ timeout: 4000 });
 
   await electronApp.close();

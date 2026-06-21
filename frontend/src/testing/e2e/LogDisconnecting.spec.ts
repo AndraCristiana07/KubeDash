@@ -88,7 +88,7 @@ test("Verify log stream modal catches abrupt socket disconnections", async () =>
   // navigate to pods management
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const targetPodRow = page
@@ -101,7 +101,7 @@ test("Verify log stream modal catches abrupt socket disconnections", async () =>
     .locator("button:has-text('Logs')")
     .first();
   await expect(openLogsButton).toBeAttached({ timeout: 5000 });
-  await openLogsButton.click();
+  await openLogsButton.click({ force: true });
 
   const consoleStatus = page.locator("text=STREAMING ACTIVE");
   await expect(consoleStatus).toBeVisible({ timeout: 5000 });

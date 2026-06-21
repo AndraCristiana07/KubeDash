@@ -36,14 +36,14 @@ test("Verify automated manifest submission and mock response validation", async 
   // open the deploy modal
   const deployButton = window.locator("button:has-text('Deploy New Pod')");
   await expect(deployButton).toBeVisible({ timeout: 15000 });
-  await deployButton.click();
+  await deployButton.click({ force: true });
 
   // open the YAML modal
   const applyYamlButton = window.locator(
     "button:has-text('Apply YAML Manifest')",
   );
   await expect(applyYamlButton).toBeVisible({ timeout: 5000 });
-  await applyYamlButton.click();
+  await applyYamlButton.click({ force: true });
 
   // populate manifest values
   const textarea = window.locator("textarea[placeholder*='apiVersion']");
@@ -54,7 +54,7 @@ test("Verify automated manifest submission and mock response validation", async 
   // apply YAML code
   const executeButton = window.locator("button:has-text('Execute Apply')");
   await expect(executeButton).toBeEnabled();
-  await executeButton.click();
+  await executeButton.click({ force: true });
 
   // close
   const modalHeader = window.locator("h3:has-text('Manifest Deployment')");

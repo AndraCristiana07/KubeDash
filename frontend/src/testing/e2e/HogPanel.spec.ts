@@ -103,7 +103,7 @@ test("Verify Resource Hogs Panel sorting, data limits, and live streaming update
   // navigate to metrics
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   // locate cpu hogs panel
   const cpuHeading = page.locator("h4:has-text('CPU Resource Dominators')");

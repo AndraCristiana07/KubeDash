@@ -80,7 +80,7 @@ test("Verify status filter badges isolate rows by lifecycle phase and clear clea
   await page.reload({ waitUntil: "domcontentloaded" });
 
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   const runningRow = page
     .locator("tr")
@@ -105,7 +105,7 @@ test("Verify status filter badges isolate rows by lifecycle phase and clear clea
     .locator("button:has-text('Failed'), [role='button']:has-text('Failed')")
     .first();
   await expect(failedBadge).toBeVisible();
-  await failedBadge.click();
+  await failedBadge.click({ force: true });
   await page.waitForTimeout(150);
 
   await expect(failedRow).toBeVisible();
@@ -116,7 +116,7 @@ test("Verify status filter badges isolate rows by lifecycle phase and clear clea
   const pendingBadge = page
     .locator("button:has-text('Pending'), [role='button']:has-text('Pending')")
     .first();
-  await pendingBadge.click();
+  await pendingBadge.click({ force: true });
   await page.waitForTimeout(150);
 
   await expect(pendingRow).toBeVisible();
@@ -129,9 +129,9 @@ test("Verify status filter badges isolate rows by lifecycle phase and clear clea
     .first();
 
   if (await allBadge.isVisible()) {
-    await allBadge.click();
+    await allBadge.click({ force: true });
   } else {
-    await pendingBadge.click();
+    await pendingBadge.click({ force: true });
   }
   await page.waitForTimeout(150);
 

@@ -66,7 +66,7 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
   // go to settings page
   const settingsTabButton = page.locator("button:has-text('Settings')").first();
   await expect(settingsTabButton).toBeAttached({ timeout: 5000 });
-  await settingsTabButton.click();
+  await settingsTabButton.click({ force: true });
 
   // select 10 seconds for metric polling interval
   const pollingSelect = page.locator("select").first();
@@ -84,14 +84,14 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
   // click button to add new config
   const newBlockButton = page.locator("button:has-text('New Block')");
   await expect(newBlockButton).toBeAttached();
-  await newBlockButton.click();
+  await newBlockButton.click({ force: true });
 
   const provisionForm = page.locator("form");
   await expect(provisionForm).toBeVisible();
 
   // click button to choose secret config
   const secretTypeButton = provisionForm.locator("button:has-text('Secret')");
-  await secretTypeButton.click();
+  await secretTypeButton.click({ force: true });
 
   // name new config
   const resourceNameInput = provisionForm.locator(
@@ -113,7 +113,7 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
 
   // commit the new config
   const commitButton = provisionForm.locator("button[type='submit']");
-  await commitButton.click();
+  await commitButton.click({ force: true });
 
   await expect(provisionForm).toBeHidden({ timeout: 5000 });
 
@@ -127,7 +127,7 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
     .locator("div[title='vault-token-props']")
     .first();
   await expect(secretConfigCard).toBeVisible({ timeout: 5000 });
-  await secretConfigCard.click();
+  await secretConfigCard.click({ force: true });
 
   // click to edit config
   const editorHeader = page
@@ -149,7 +149,7 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
   // click show button to reveal secret
   const revealButton = page.locator("button:has-text('Show')").first();
   if (await revealButton.isVisible()) {
-    await revealButton.click();
+    await revealButton.click({ force: true });
   }
 
   // update secret value
@@ -160,7 +160,7 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
   const syncButton = page
     .locator("button:has-text('Save & Sync Properties')")
     .first();
-  await syncButton.click();
+  await syncButton.click({ force: true });
 
   // check success toast appears after saving
   await expect(

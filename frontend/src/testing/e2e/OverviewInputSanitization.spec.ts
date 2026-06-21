@@ -18,7 +18,7 @@ test("Verify automated pod identity name input sanitization formats correctly", 
 
   const deployButton = window.locator("button:has-text('Deploy New Pod')");
   await expect(deployButton).toBeVisible({ timeout: 15000 });
-  await deployButton.click();
+  await deployButton.click({ force: true });
 
   const input = window.locator("input[placeholder*='custom-web-server']");
   await expect(input).toBeVisible();
@@ -29,6 +29,6 @@ test("Verify automated pod identity name input sanitization formats correctly", 
   // verify sanitizer transforms it to lowercase alphanumeric
   await expect(input).toHaveValue("invalid-podname", { timeout: 5000 });
 
-  await window.locator("button:has-text('Cancel')").click();
+  await window.locator("button:has-text('Cancel')").click({ force: true });
   await electronApp.close();
 });

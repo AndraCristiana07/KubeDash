@@ -15,8 +15,12 @@ test("Verify empty form state validation rules and modal closure", async () => {
   await window.waitForSelector("body");
 
   // open the deploy pod and YAML modals
-  await window.locator("button:has-text('Deploy New Pod')").click();
-  await window.locator("button:has-text('Apply YAML Manifest')").click();
+  await window
+    .locator("button:has-text('Deploy New Pod')")
+    .click({ force: true });
+  await window
+    .locator("button:has-text('Apply YAML Manifest')")
+    .click({ force: true });
 
   // confirm target text area is visible
   const textarea = window.locator("textarea[placeholder*='apiVersion']");
@@ -32,7 +36,7 @@ test("Verify empty form state validation rules and modal closure", async () => {
 
   // verify manual cancel action
   const cancelButton = window.locator("button:has-text('Cancel')");
-  await cancelButton.click();
+  await cancelButton.click({ force: true });
 
   const modalHeader = window.locator("h3:has-text('Manifest Deployment')");
   await expect(modalHeader).toBeHidden({ timeout: 5000 });

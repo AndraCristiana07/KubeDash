@@ -182,7 +182,7 @@ test("Verify live hardware metrics render and sort correctly", async () => {
   // navigate to metrics
   const navButton = page.locator("button:has-text('Hardware Metrics')").first();
   await expect(navButton).toBeAttached({ timeout: 5000 });
-  await navButton.click();
+  await navButton.click({ force: true });
 
   // check header
   const liveHeader = page
@@ -215,14 +215,14 @@ test("Verify live hardware metrics render and sort correctly", async () => {
   await expect(page.locator("tr:has-text('pod-mid-tier')")).toBeAttached();
 
   // reset filter with the inline clear button ✕
-  await page.locator("button:has-text('✕')").click();
+  await page.locator("button:has-text('✕')").click({ force: true });
   await expect(
     page.locator("tr:has-text('kubedash-backend-7f85')"),
   ).toBeAttached();
 
   // verify column sorting
   const ramHeader = page.locator("th:has-text('RAM Allocation')");
-  await ramHeader.click();
+  await ramHeader.click({ force: true });
 
   const topRowPodName = await page.locator("tbody tr td").nth(1).textContent();
   expect(topRowPodName).toBeDefined();

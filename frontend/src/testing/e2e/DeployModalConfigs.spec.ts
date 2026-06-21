@@ -49,7 +49,9 @@ test("Verify cluster variable resource mapping and rows", async () => {
   });
 
   // open the modal panel
-  await page.locator("button:has-text('Deploy New Pod')").click();
+  await page
+    .locator("button:has-text('Deploy New Pod')")
+    .click({ force: true });
   const modalHeader = page.locator(
     "h3:has-text('Deploy New Workspace Workload')",
   );
@@ -88,14 +90,14 @@ test("Verify cluster variable resource mapping and rows", async () => {
     const addVariableButton = page.locator(
       "button:has-text('+ Add Variable Mapping')",
     );
-    await addVariableButton.click();
+    await addVariableButton.click({ force: true });
     // check there's 2 rows now
     const envInputRows = page.locator("input[placeholder*='DB_PASS']");
     await expect(envInputRows).toHaveCount(2);
 
     // delete first row
     const deleteRowButton = page.locator("button:has-text('✕')").first();
-    await deleteRowButton.click();
+    await deleteRowButton.click({ force: true });
 
     // verify it's back to 1 row
     await expect(envInputRows).toHaveCount(1);

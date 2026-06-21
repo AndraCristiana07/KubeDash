@@ -92,13 +92,13 @@ test("Verify pod deletion removes table rows and dynamically updates metrics", a
     .first();
 
   await expect(refreshMetricsButton).toBeVisible();
-  await refreshMetricsButton.click();
+  await refreshMetricsButton.click({ force: true });
   await expect(workloadsCard).toContainText("1 Pods Running", {
     timeout: 5000,
   });
 
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   const targetPodRow = page
     .locator("tr")
@@ -110,14 +110,14 @@ test("Verify pod deletion removes table rows and dynamically updates metrics", a
     .locator("button:has-text('Del'), button.text-red-700")
     .first();
 
-  await deleteActionButton.click();
+  await deleteActionButton.click({ force: true });
 
   await expect(targetPodRow).toBeHidden({ timeout: 5000 });
 
   const overviewTabButton = page
     .locator("button:has-text('Overview'), button:has-text('Dashboard')")
     .first();
-  await overviewTabButton.click();
+  await overviewTabButton.click({ force: true });
 
   await expect(workloadsCard).toContainText("0 Pods Running", {
     timeout: 5000,

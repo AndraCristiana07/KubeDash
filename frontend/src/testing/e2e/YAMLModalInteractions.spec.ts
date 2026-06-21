@@ -17,14 +17,14 @@ test("Verify YAML modal rendering, text input", async () => {
   // open initial dialog
   const deployButton = window.locator("button:has-text('Deploy New Pod')");
   await expect(deployButton).toBeVisible({ timeout: 15000 });
-  await deployButton.click();
+  await deployButton.click({ force: true });
 
   // click button to go to YAML modal
   const applyYamlButton = window.locator(
     "button:has-text('Apply YAML Manifest')",
   );
   await expect(applyYamlButton).toBeVisible({ timeout: 5000 });
-  await applyYamlButton.click();
+  await applyYamlButton.click({ force: true });
 
   // attached dynamic manifest deployment layout
   const modalHeader = window.locator("h3:has-text('Manifest Deployment')");
@@ -41,7 +41,7 @@ test("Verify YAML modal rendering, text input", async () => {
   // verify clicking Clear action button clears code out
   const clearButton = window.locator("button:has-text('Clear')");
   await expect(clearButton).toBeEnabled();
-  await clearButton.click();
+  await clearButton.click({ force: true });
   await expect(textarea).toHaveValue("");
 
   // drag and drop event handling

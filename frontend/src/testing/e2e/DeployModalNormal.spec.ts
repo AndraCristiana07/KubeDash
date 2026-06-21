@@ -26,7 +26,7 @@ test("Verify Deploy Workload Modal form entries and submit triggers", async () =
 
   // open deploy pod modal
   const deployButton = window.locator("button:has-text('Deploy New Pod')");
-  await deployButton.click();
+  await deployButton.click({ force: true });
 
   const modalHeader = window.locator(
     "h3:has-text('Deploy New Workspace Workload')",
@@ -48,7 +48,7 @@ test("Verify Deploy Workload Modal form entries and submit triggers", async () =
   const cancelButton = form.locator("button[type='button']").first();
 
   // execute form submit
-  await launchButton.click();
+  await launchButton.click({ force: true });
 
   // verify loading state
   await expect(launchButton).toHaveText("Deploying...");

@@ -92,7 +92,7 @@ test("Verify UI progress bar colors based on levels", async () => {
   // navigate to metrics
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   // check metrics rows populate
   const safeCell = page

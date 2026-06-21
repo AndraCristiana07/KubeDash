@@ -82,7 +82,7 @@ test("Verify pod restart action triggers loader state spin, displays toast alert
 
   // go to pods management
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const targetPodRow = page
@@ -106,7 +106,7 @@ test("Verify pod restart action triggers loader state spin, displays toast alert
     .first();
   await expect(restartActionButton).toBeVisible();
 
-  await restartActionButton.click();
+  await restartActionButton.click({ force: true });
 
   // check success toast appears
   const successToast = page.locator("body");

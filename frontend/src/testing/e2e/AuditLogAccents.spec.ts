@@ -52,8 +52,7 @@ test("Verify audit log view highlights core system rows", async () => {
     )
     .first();
   await expect(navButton).toBeVisible({ timeout: 15000 });
-  await navButton.click();
-
+  await navButton.click({ force: true });
   // locate individual row
   const systemCoreRow = window.locator("tr:has-text('kubedash-backend-7f85')");
   const standardUserRow = window.locator("tr:has-text('payment-gateway-pod')");

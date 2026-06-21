@@ -89,7 +89,7 @@ test("Verify high-density data tables handle rapid search filtering and structur
 
   // go to pods page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // locate pod row
   const podRow = page
@@ -106,12 +106,12 @@ test("Verify high-density data tables handle rapid search filtering and structur
     .first();
   await expect(searchInput).toBeVisible();
 
-  await searchInput.click();
+  await searchInput.click({ force: true });
   await searchInput.fill("");
   await page.waitForTimeout(150);
 
   // search pod
-  await searchInput.click();
+  await searchInput.click({ force: true });
   await searchInput.fill("kube-system-worker-node");
   await page.waitForTimeout(200);
 

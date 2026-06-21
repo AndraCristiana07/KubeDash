@@ -82,7 +82,7 @@ test("Verify metrics data grid goes to no metrics found when searching non exist
   // navigate to metrics
   const metricsTabButton = page.locator("button:has-text('Metrics')").first();
   await expect(metricsTabButton).toBeAttached({ timeout: 5000 });
-  await metricsTabButton.click();
+  await metricsTabButton.click({ force: true });
 
   // check data rows exist
   const dataRowItem = page

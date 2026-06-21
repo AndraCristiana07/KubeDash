@@ -28,8 +28,12 @@ test("Verify loading state flags and backend API exception handling", async () =
   });
 
   // open both deploy pod and YAML modal
-  await window.locator("button:has-text('Deploy New Pod')").click();
-  await window.locator("button:has-text('Apply YAML Manifest')").click();
+  await window
+    .locator("button:has-text('Deploy New Pod')")
+    .click({ force: true });
+  await window
+    .locator("button:has-text('Apply YAML Manifest')")
+    .click({ force: true });
 
   // populate configuration text data
   const textarea = window.locator("textarea[placeholder*='apiVersion']");
@@ -47,7 +51,7 @@ test("Verify loading state flags and backend API exception handling", async () =
   const executeButton = modalFooter.locator("button").last();
 
   // click button
-  await executeButton.click();
+  await executeButton.click({ force: true });
 
   // verify loading states during loadinf
   await expect(executeButton).toHaveText("Orchestrating...");

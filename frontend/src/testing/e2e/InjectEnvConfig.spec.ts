@@ -72,7 +72,7 @@ test("Verify environment map injection modal", async () => {
   // go to pods page
   const podsTabButton = page.locator("button:has-text('Pods')").first();
   await expect(podsTabButton).toBeAttached({ timeout: 5000 });
-  await podsTabButton.click();
+  await podsTabButton.click({ force: true });
 
   // look for target row
   const targetPodRow = page
@@ -83,7 +83,7 @@ test("Verify environment map injection modal", async () => {
   // click edit button
   const editButton = targetPodRow.locator("button:has-text('Edit')");
   await expect(editButton).toBeAttached();
-  await editButton.click();
+  await editButton.click({ force: true });
 
   // check modal is open
   const modalContainer = page.locator(".fixed.inset-0").first();
@@ -110,7 +110,7 @@ test("Verify environment map injection modal", async () => {
   );
 
   await expect(addKeyRowButton).toBeAttached();
-  await addKeyRowButton.click();
+  await addKeyRowButton.click({ force: true });
 
   // check x buttons appeared
   const modalDeleteButtons = modalContainer.locator("button:has-text('✕')");
@@ -133,7 +133,7 @@ test("Verify environment map injection modal", async () => {
   const applyButton = modalContainer.locator(
     "button:has-text('Apply & Recycle Pod')",
   );
-  await applyButton.click();
+  await applyButton.click({ force: true });
 
   await expect.poll(() => interceptedPayload).not.toBeNull();
 

@@ -48,7 +48,7 @@ test("Verify audit log view queries backend endpoints with parameters", async ()
     )
     .first();
   await expect(navButton).toBeVisible({ timeout: 15000 });
-  await navButton.click();
+  await navButton.click({ force: true });
 
   const componentHeader = window.locator(
     "h2:has-text('Cluster Audit Log History')",

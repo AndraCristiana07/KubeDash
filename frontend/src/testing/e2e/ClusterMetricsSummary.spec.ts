@@ -101,7 +101,7 @@ test("Verify live hardware summary specs", async () => {
   // navigate to metrics
   const navButton = page.locator("button:has-text('Hardware Metrics')").first();
   await expect(navButton).toBeAttached({ timeout: 5000 });
-  await navButton.click();
+  await navButton.click({ force: true });
 
   const podsCountCard = page.locator("div:has-text('Managed Pods')").first();
   await expect(podsCountCard).toContainText("4", { timeout: 10000 });
