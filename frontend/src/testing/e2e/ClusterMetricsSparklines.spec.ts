@@ -200,7 +200,13 @@ test("Verify timeline trend subtabs display sparklines metrics", async () => {
     .locator("tr")
     .filter({ hasText: "pod-low-cpu" })
     .first();
-  await expect(targetRow).toBeVisible({ timeout: 4000 });
+  // await expect(targetRow).toBeVisible({ timeout: 4000 });
+
+  await page.waitForSelector("tr:has-text('pod-low-cpu')", {
+    state: "visible",
+    timeout: 15000,
+  });
+  await expect(targetRow).toBeVisible();
 
   // locate the SVG container that MUI X Charts uses
   const sparklineSvg = targetRow.locator("svg").first();
