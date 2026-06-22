@@ -11,6 +11,7 @@ test("Verify automated pod identity name input sanitization formats correctly", 
   });
 
   const window = await electronApp.firstWindow();
+  await window.setViewportSize({ width: 1440, height: 900 });
 
   // cold-start engine
   await window.reload({ waitUntil: "domcontentloaded" });

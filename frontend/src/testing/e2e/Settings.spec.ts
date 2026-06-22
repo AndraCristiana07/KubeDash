@@ -10,15 +10,8 @@ test("Verify Settings view allows modifying scrape intervals, toggling creation 
     ],
   });
 
-  // maximize window
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // mock API route for updating config
   await page.route("**/api/cluster/config/update", async (route) => {

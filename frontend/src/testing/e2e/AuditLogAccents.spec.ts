@@ -33,6 +33,7 @@ test("Verify audit log view highlights core system rows", async () => {
     ],
   });
   const window = await electronApp.firstWindow();
+  await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.route("**/api/logs*", async (route) => {
     await route.fulfill({

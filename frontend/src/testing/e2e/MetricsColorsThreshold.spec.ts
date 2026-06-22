@@ -10,14 +10,8 @@ test("Verify UI progress bar colors based on levels", async () => {
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // mock websocket
   await page.addInitScript(() => {

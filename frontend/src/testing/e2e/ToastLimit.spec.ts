@@ -10,12 +10,8 @@ test("Verify WebSocket toast alerts cap visible notifications to 4", async () =>
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) mainWindow.maximize();
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // mock API routes
   await page.route(/\/api\/cluster\/pods/, async (route) => {

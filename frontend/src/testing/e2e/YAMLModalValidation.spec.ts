@@ -10,6 +10,7 @@ test("Verify empty form state validation rules and modal closure", async () => {
     ],
   });
   const window = await electronApp.firstWindow();
+  await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.reload({ waitUntil: "domcontentloaded" });
   await window.waitForSelector("body");

@@ -26,6 +26,8 @@ test("Verify audit log operations update API parameters", async () => {
   });
 
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   let lastQueryUrl = "";
 
   await page.route("**/api/logs*", async (route) => {

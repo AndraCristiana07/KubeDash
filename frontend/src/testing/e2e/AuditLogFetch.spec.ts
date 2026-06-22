@@ -25,6 +25,7 @@ test("Verify audit log view queries backend endpoints with parameters", async ()
     ],
   });
   const window = await electronApp.firstWindow();
+  await window.setViewportSize({ width: 1440, height: 900 });
 
   let interceptedUrl = "";
 

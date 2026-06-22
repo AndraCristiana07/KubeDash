@@ -10,14 +10,8 @@ test("Verify metrics data grid goes to no metrics found when searching non exist
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // mock websocket
   await page.addInitScript(() => {

@@ -10,14 +10,8 @@ test("Verify configuration quick view modal", async () => {
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   // mock API route getting pods
   await page.route("**/api/cluster/pods*", async (route) => {

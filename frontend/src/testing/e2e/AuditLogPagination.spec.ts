@@ -26,6 +26,7 @@ test("Verify pagination button clicks increment page ", async () => {
     ],
   });
   const window = await electronApp.firstWindow();
+  await window.setViewportSize({ width: 1440, height: 900 });
 
   let targetPageQueried = "";
 

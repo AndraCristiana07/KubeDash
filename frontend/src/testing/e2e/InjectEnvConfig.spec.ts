@@ -9,13 +9,9 @@ test("Verify environment map injection modal", async () => {
       "--no-sandbox",
     ],
   });
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
+
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.route("**/api/cluster/pods*", async (route) => {
     await route.fulfill({

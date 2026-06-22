@@ -10,12 +10,8 @@ test("Verify high-density data tables handle rapid search filtering and structur
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) mainWindow.maximize();
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   const mockHighDensityPods = [
     ...Array.from({ length: 30 }, (_, i) => ({

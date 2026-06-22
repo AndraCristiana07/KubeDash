@@ -10,12 +10,8 @@ test("Verify pod deletion removes table rows and dynamically updates metrics", a
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) mainWindow.maximize();
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   let currentPodCount = 1;
   let mockPodsList = [

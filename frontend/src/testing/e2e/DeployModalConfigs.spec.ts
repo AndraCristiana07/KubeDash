@@ -11,6 +11,7 @@ test("Verify cluster variable resource mapping and rows", async () => {
   });
 
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector("body");
