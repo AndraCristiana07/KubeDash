@@ -37,7 +37,7 @@ jobs:
 
       - name: Run Playwright inside Virtual Display Server
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npx playwright test --workers=1 --reporter=list --timeout=60000
+          xvfb-run --auto-servernum --server-args="-screen 0 2560x1440x24" npx playwright test --workers=1 --reporter=list --timeout=60000
         env:
           CI: true
           # to tell Chromium to optimize rendering loops for headless servers
