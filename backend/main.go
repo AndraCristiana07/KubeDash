@@ -181,6 +181,7 @@ func main() {
 	config.Clientset = clientset
 
 	config.ConnectDatabase()
+	InitRedis("localhost:6379")
 
 	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
 	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
@@ -332,6 +333,22 @@ func getClusterSummary(c *gin.Context) {
 		nsFilter = ""
 	}
 
+	cacheKeyNamespace := nsFilter
+	if cacheKeyNamespace == "" {
+		cacheKeyNamespace = "all"
+	}
+	cacheKey := fmt.Sprintf("k8s:summary:%s", cacheKeyNamespace)
+
+	cachedJSON, err := redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var cachedSummary map[string]interface{}
+		if json.Unmarshal([]byte(cachedJSON), &cachedSummary) == nil {
+			c.Header("X-Cache", "HIT")
+			c.JSON(http.StatusOK, cachedSummary)
+			return
+		}
+	}
+
 	// pod length count for filtered namespace
 	pods, err := clientset.CoreV1().Pods(nsFilter).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -374,6 +391,18 @@ func getClusterSummary(c *gin.Context) {
 		if clusterStatus == "Degraded" {
 			break
 		}
+	}
+
+	// save summary to redis
+	summaryData := gin.H{
+		"podsCount":     len(pods.Items),
+		"nodesTotal":    len(nodes.Items),
+		"clusterStatus": clusterStatus,
+	}
+
+	summaryBytes, err := json.Marshal(summaryData)
+	if err == nil {
+		_ = redisClient.Set(ctx, cacheKey, summaryBytes, 5*time.Second).Err()
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -458,6 +487,10 @@ func deployNewPod(c *gin.Context) {
 		return
 	}
 
+	cacheKeySpecific := fmt.Sprintf("k8s:pods:%s", req.Namespace)
+	_ = redisClient.Del(ctx, cacheKeySpecific, "k8s:pods:all").Err()
+	_ = redisClient.Del(ctx, fmt.Sprintf("k8s:summary:%s", req.Namespace), "k8s:summary:all").Err()
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Pod specification deployed successfully!",
 	})
@@ -473,6 +506,26 @@ func getClusterPods(c *gin.Context) {
 	nsFilter := c.Query("namespace")
 	if nsFilter == "all" || nsFilter == "*" || nsFilter == "" {
 		nsFilter = ""
+	}
+
+	// redis cache
+	cacheKeyNamespace := nsFilter
+	if cacheKeyNamespace == "" {
+		cacheKeyNamespace = "all"
+	}
+	cacheKey := fmt.Sprintf("k8s:pods:%s", cacheKeyNamespace)
+
+	cachedJSON, err := redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var cachedPodList []PodTableEntry
+		// uf serialization matches, bring from cache
+		if json.Unmarshal([]byte(cachedJSON), &cachedPodList) == nil {
+			c.Header("X-Cache", "HIT") // header for debugging in browser network tab
+			c.JSON(http.StatusOK, gin.H{
+				"pods": cachedPodList,
+			})
+			return
+		}
 	}
 
 	// get pod
@@ -551,6 +604,14 @@ func getClusterPods(c *gin.Context) {
 				LastTermState: lastTermState,
 			})
 	}
+
+	podBytes, err := json.Marshal(podList)
+	if err == nil {
+		// cache with a 5-second TTL window
+		_ = redisClient.Set(ctx, cacheKey, podBytes, 5*time.Second).Err()
+	}
+
+	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, gin.H{
 		"pods": podList,
 	})
@@ -580,6 +641,13 @@ func deleteClusterPod(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// pod was deleted -> cached pod list and summary are stale
+	cacheKeySpecific := fmt.Sprintf("k8s:pods:%s", namespace)
+	_ = redisClient.Del(ctx, cacheKeySpecific, "k8s:pods:all").Err()
+
+	// if cache, evict them
+	_ = redisClient.Del(ctx, fmt.Sprintf("k8s:summary:%s", namespace), "k8s:summary:all").Err()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
 }
