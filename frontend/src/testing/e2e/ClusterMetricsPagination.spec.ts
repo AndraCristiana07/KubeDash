@@ -10,13 +10,6 @@ test("Verify metrics dashboard pagination works", async () => {
     ],
   });
 
-  // await electronApp.evaluate(({ BrowserWindow }) => {
-  //   const mainWindow = BrowserWindow.getAllWindows()[0];
-  //   if (mainWindow) {
-  //     mainWindow.maximize();
-  //   }
-  // });
-
   const page = await electronApp.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
 

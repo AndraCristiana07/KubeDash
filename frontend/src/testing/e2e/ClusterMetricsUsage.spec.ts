@@ -10,14 +10,8 @@ test("Verify live hardware metrics render and sort correctly", async () => {
     ],
   });
 
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      mainWindow.maximize();
-    }
-  });
-
   const page = await electronApp.firstWindow();
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.addInitScript(() => {
     (window as any).WebSocket = function (url: string) {
