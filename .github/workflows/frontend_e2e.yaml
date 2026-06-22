@@ -1,0 +1,52 @@
+name: Playwright Electron E2E Suite
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  run-e2e:
+    name: Execute Playwright Electron Matrix
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: ./frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Install Operating System GUI Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgbm1 libasound2t64 libnss3 libatk-bridge2.0-0 libgtk-3-0
+
+      - name: Install Playwright Engine Binaries
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright inside Virtual Display Server
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 2560x1440x24" npx playwright test --workers=1 --reporter=list --timeout=60000
+        env:
+          CI: true
+          # to tell Chromium to optimize rendering loops for headless servers
+          ELECTRON_DISABLE_GPU: 1
+          QT_X11_NO_MITSHM: 1
+      - name: Archive Playwright Test Failures Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: frontend/playwright-report/
+          retention-days: 7

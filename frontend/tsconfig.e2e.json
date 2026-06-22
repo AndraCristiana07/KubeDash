@@ -1,15 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
     "jsx": "react-jsx",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "noUncheckedSideEffectImports": false,
-    "types": ["jest", "@testing-library/jest-dom", "node"]
+    "types": ["node"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/testing/e2e/**/*.spec.ts", "src/testing/e2e/**/*.spec.tsx"]
 }
