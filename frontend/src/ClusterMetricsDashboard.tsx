@@ -10,6 +10,7 @@ import ResourceHogsPanel from "./ResourceHogPanel";
 import ClusterMetricsSummaryGrid from "./ClusterMetricsSummary";
 import PodUsageTable from "./ClusterMetricsUsageTable";
 import PodHistoricalTrendTable from "./ClusterMetricsSparklinesTable";
+import ClusterTimelineChartsPanel from "./ClusterMetricsChartsPanel";
 
 interface PodMetricRow {
   pod_name: string;
@@ -42,7 +43,9 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
-  const [activeSubTab, setActiveSubTab] = useState<"usage" | "trends">("usage");
+  const [activeSubTab, setActiveSubTab] = useState<
+    "usage" | "trends" | "analytics"
+  >("usage");
 
   const [sortKey, setSortKey] = useState<SortKey>("namespace");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
@@ -248,14 +251,25 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         >
           Historical Trends
         </button>
+        <button
+          onClick={() => setActiveSubTab("analytics")}
+          className={`px-4 py-2 border-t border-x rounded-t-lg transition-all font-bold tracking-wide cursor-pointer ${
+            activeSubTab === "analytics"
+              ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+              : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+          }`}
+        >
+          Cluster Timeline Charts
+        </button>
       </div>
 
       <div className="bg-white border border-[#E7E1B1] rounded-b-xl rounded-tr-xl shadow-sm overflow-hidden flex flex-col">
         <div className="bg-[#E7E1B1]/20 px-5 py-3 border-b border-[#E7E1B1] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="text-xs font-bold text-[#0D530E] uppercase tracking-wider">
-            {activeSubTab === "usage"
-              ? "Live Hardware Compute Monitor"
-              : "Timeline Velocity Vector Matrices"}
+            {activeSubTab === "usage" && "Live Hardware Compute Monitor"}
+            {activeSubTab === "trends" && "Timeline Velocity Vector Matrices"}
+            {activeSubTab === "analytics" &&
+              "Redis Cluster Time-Series Analytics"}
           </div>
           <div className="relative w-full sm:w-72 flex items-center">
             <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
@@ -282,7 +296,7 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
         </div>
 
         <div className="overflow-x-auto">
-          {activeSubTab === "usage" ? (
+          {activeSubTab === "usage" && (
             <PodUsageTable
               activeSubTab={activeSubTab}
               currentMetricRows={currentMetricRows}
@@ -290,8 +304,9 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               renderSortIndicator={renderSortIndicator}
               renderProgressBar={renderProgressBar}
             />
-          ) : (
-            /* historical sparklines */
+          )}
+
+          {activeSubTab === "trends" && (
             <PodHistoricalTrendTable
               activeSubTab={activeSubTab}
               currentMetricRows={currentMetricRows}
@@ -301,6 +316,8 @@ export default function ClusterMetricsDashboard({ metrics }: DashboardProps) {
               renderLibraryTrendLine={renderLibraryTrendLine}
             />
           )}
+
+          {activeSubTab === "analytics" && <ClusterTimelineChartsPanel />}
         </div>
 
         {/* pagination*/}

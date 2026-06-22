@@ -19,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -81,6 +82,12 @@ type PodResourceMetrics struct {
 	MemUsage  int64  `json:"mem_usage"`
 	GPUUsage  int64  `json:"gpu_usage"`
 	Type      string `json:"type"`
+}
+
+type MetricSnapshot struct {
+	Timestamp int64   `json:"timestamp"`
+	CPUUsage  float64 `json:"cpu_usage"` // in Cores
+	MemUsage  float64 `json:"mem_usage"` // in MiB
 }
 
 type RawK8sMetricsList struct {
@@ -226,6 +233,7 @@ func main() {
 		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
 		api.DELETE("/cluster/config/delete", deleteConfigBlock)
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
+		api.GET("/cluster/metrics/history", getMetricsHistory)
 	}
 
 	if err := r.Run(":8080"); err != nil {
@@ -1287,7 +1295,7 @@ func broadcastMetricsInBackground() {
 
 	transport, err := rest.TransportFor(k8sConfig)
 	if err != nil {
-		log.Printf("⚠️ Failed to create metrics transport: %v\n", err)
+		log.Printf("Failed to create metrics transport: %v\n", err)
 		return
 	}
 
@@ -1313,7 +1321,7 @@ func broadcastMetricsInBackground() {
 		// query the metrics endpoint using http client
 		resp, err := httpClient.Get(metricsURL)
 		if err != nil {
-			log.Printf("⚠️ Metrics Server Connection Failure: %v\n", err)
+			log.Printf("Metrics Server Connection Failure: %v\n", err)
 			continue
 		}
 
@@ -1321,22 +1329,25 @@ func broadcastMetricsInBackground() {
 		_ = resp.Body.Close()
 
 		if err != nil {
-			log.Printf("⚠️ Failed to read metrics response body: %v\n", err)
+			log.Printf("Failed to read metrics response body: %v\n", err)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("⚠️ Metrics Server returned HTTP %d: %s\n", resp.StatusCode, string(rawBytes))
+			log.Printf("Metrics Server returned HTTP %d: %s\n", resp.StatusCode, string(rawBytes))
 			continue
 		}
 
 		var metricsList RawK8sMetricsList
 		if err := json.Unmarshal(rawBytes, &metricsList); err != nil {
-			log.Printf("⚠️ JSON Parsing Failure: %v\n", err)
+			log.Printf("JSON Parsing Failure: %v\n", err)
 			continue
 		}
 
 		log.Printf("Processing telemetry fields for %d target cluster pods...\n", len(metricsList.Items))
+
+		var clusterTotalCPU int64
+		var clusterTotalMem int64
 
 		for _, item := range metricsList.Items {
 			var totalCPU int64
@@ -1388,6 +1399,10 @@ func broadcastMetricsInBackground() {
 				}
 			}
 
+			// add to toal for redis
+			clusterTotalCPU += totalCPU
+			clusterTotalMem += totalMem
+
 			payload := PodResourceMetrics{
 				PodName:   item.Metadata.Name,
 				Namespace: item.Metadata.Namespace,
@@ -1414,7 +1429,57 @@ func broadcastMetricsInBackground() {
 			}
 			notificationMutex.Unlock()
 		}
+
+		now := time.Now()
+		snapshot := MetricSnapshot{
+			Timestamp: now.Unix(),
+			CPUUsage:  float64(clusterTotalCPU), // total cluster millicores
+			MemUsage:  float64(clusterTotalMem), // total cluster MiB
+		}
+
+		snapshotBytes, err := json.Marshal(snapshot)
+		if err == nil {
+			key := "k8s:metrics:history"
+			// add to Redis Sorted Set using timestamp score
+			_ = redisClient.ZAdd(ctx, key, redis.Z{
+				Score:  float64(snapshot.Timestamp),
+				Member: string(snapshotBytes),
+			}).Err()
+
+			// retain only the last 2 hours
+			twoHoursAgo := now.Add(-2 * time.Hour).Unix()
+			_ = redisClient.ZRemRangeByScore(ctx, key, "-inf", fmt.Sprintf("%d", twoHoursAgo)).Err()
+		}
 	}
+}
+
+func getMetricsHistory(c *gin.Context) {
+	key := "k8s:metrics:history"
+
+	// fetch all historical snapshots stored inside Sorted Set
+	rawSnapshots, err := redisClient.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     key,
+		Start:   "-inf", // minimum score
+		Stop:    "+inf", // maximum score
+		ByScore: true,   // tells the ZRANGE command to treat Start/Stop as scores
+	}).Result()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull time-series array"})
+		return
+	}
+
+	var history []MetricSnapshot
+	for _, rawStr := range rawSnapshots {
+		var snap MetricSnapshot
+		if json.Unmarshal([]byte(rawStr), &snap) == nil {
+			history = append(history, snap)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
 }
 
 func applyClusterManifest(c *gin.Context) {
@@ -1498,6 +1563,34 @@ func applyClusterManifest(c *gin.Context) {
 		"applied": processedObjects,
 	})
 }
+
+// func getMetricsHistory(c *gin.Context) {
+// 	key := "k8s:metrics:history"
+
+// 	// fetch all items from the last 2 hours from Sorted Set
+// 	rawSnapshots, err := redisClient.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+// 		Min: "-inf",
+// 		Max: "+inf",
+// 	}).Result()
+
+// 	if err != nil {
+// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull time-series indices"})
+// 		return
+// 	}
+
+// 	// ordered array
+// 	var history []RawK8sMetricsList
+// 	for _, rawStr := range rawSnapshots {
+// 		var snap RawK8sMetricsList
+// 		if json.Unmarshal([]byte(rawStr), &snap) == nil {
+// 			history = append(history, snap)
+// 		}
+// 	}
+
+// 	c.JSON(http.StatusOK, gin.H{
+// 		"history": history,
+// 	})
+// }
 
 func homeDir() string {
 	home, err := os.UserHomeDir()
