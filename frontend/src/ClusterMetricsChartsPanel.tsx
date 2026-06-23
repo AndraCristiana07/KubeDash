@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 
-interface HistoricalSnapshot {
+export interface HistoricalSnapshot {
   timestamp: number;
   cpu_usage: number; // in millicores
   mem_usage: number; // in MiB

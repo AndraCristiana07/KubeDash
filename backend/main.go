@@ -1439,7 +1439,7 @@ func broadcastMetricsInBackground() {
 
 		snapshotBytes, err := json.Marshal(snapshot)
 		if err == nil {
-			key := "k8s:metrics:history"
+			key := "k8s:metrics:history:all"
 			// add to Redis Sorted Set using timestamp score
 			_ = redisClient.ZAdd(ctx, key, redis.Z{
 				Score:  float64(snapshot.Timestamp),
@@ -1454,7 +1454,13 @@ func broadcastMetricsInBackground() {
 }
 
 func getMetricsHistory(c *gin.Context) {
-	key := "k8s:metrics:history"
+	// key := "k8s:metrics:history"
+	nsFilter := c.DefaultQuery("namespace", "all")
+	if nsFilter == "" || nsFilter == "*" {
+		nsFilter = "all"
+	}
+
+	key := fmt.Sprintf("k8s:metrics:history:%s", nsFilter)
 
 	// fetch all historical snapshots stored inside Sorted Set
 	rawSnapshots, err := redisClient.ZRangeArgs(ctx, redis.ZRangeArgs{
