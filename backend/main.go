@@ -189,6 +189,7 @@ func main() {
 
 	config.ConnectDatabase()
 	InitRedis("localhost:6379")
+	StartClusterBlackBox(context.Background())
 
 	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
 	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
@@ -234,6 +235,7 @@ func main() {
 		api.DELETE("/cluster/config/delete", deleteConfigBlock)
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
 		api.GET("/cluster/metrics/history", getMetricsHistory)
+		api.GET("/cluster/incidents", getClusterIncidents)
 	}
 
 	if err := r.Run(":8080"); err != nil {
@@ -327,6 +329,37 @@ func broadcastToWebSockets(logEntry models.ClusterLog) {
 		}
 		notificationMutex.Unlock()
 	}
+}
+
+func getClusterIncidents(c *gin.Context) {
+	streamKey := "k8s:incidents:stream"
+
+	// fetch items from the stream from the newest to oldest, with 50 limit
+	results, err := redisClient.XRevRangeN(c.Request.Context(), streamKey, "+", "-", 50).Result()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to extract incident ledger from stream"})
+		return
+	}
+
+	// if stream is empty, return an empty array instead of null
+	incidents := []ClusterIncident{}
+
+	for _, entry := range results {
+		rawPayload, exists := entry.Values["payload"]
+		if !exists {
+			continue
+		}
+
+		// convert the raw string payload back into structured ClusterIncident object
+		var incident ClusterIncident
+		if err := json.Unmarshal([]byte(rawPayload.(string)), &incident); err == nil {
+			incidents = append(incidents, incident)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"incidents": incidents,
+	})
 }
 
 func getClusterSummary(c *gin.Context) {

@@ -52,13 +52,19 @@ kubectl patch -n kube-system deployment metrics-server --type=json \
   -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 ```
 
-6. In another terminal, run the backend:
+6. Run docker compose for redis:
 
 ```sh
-cd backend && go run main.go
+docker compose up -d
 ```
 
-7. Open another terminal to run the frontend
+7. In another terminal, run the backend:
+
+```sh
+cd backend && go run .
+```
+
+8. Open another terminal to run the frontend
 
 ```sh
 cd frontend && npm start
@@ -132,7 +138,8 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 ```
 
-On this page there are 2 tabs:
+On this page there are 3 tabs:
 
 - on one there is a live table with metrics over pods with cpu load, RAM allocation NVIDIA GPU COMPUTE and status
-- on the other one they are live spikelines on history of hardware metrics
+- on the second one they are live spikelines on history of hardware metrics
+- on the thrid one, they are charts for CPU and Memory usage from the time it started (usually first time opening the app) to present
