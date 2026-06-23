@@ -8,6 +8,23 @@ const mockHistoryData = [
   { timestamp: 1719100010, cpu_usage: 1200, mem_usage: 450 },
 ];
 
+jest.mock("@mui/x-charts/LineChart", () => ({
+  LineChart: jest.fn(({ xAxis, series, height }) => (
+    <div data-testid="linechart-mock" data-height={height}>
+      <div data-testid="chart-xaxis">{xAxis[0]?.data?.join(",")}</div>
+      {series.map((s: any, idx: number) => (
+        <div
+          key={idx}
+          data-testid={`chart-series-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
+          data-color={s.color}
+        >
+          {s.data?.join(",")}
+        </div>
+      ))}
+    </div>
+  )),
+}));
+
 describe("ClusterTimelineChartsPanel Component", () => {
   const mockNetworkResponse = (
     responseObject: any,
