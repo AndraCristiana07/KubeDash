@@ -19,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -81,6 +82,12 @@ type PodResourceMetrics struct {
 	MemUsage  int64  `json:"mem_usage"`
 	GPUUsage  int64  `json:"gpu_usage"`
 	Type      string `json:"type"`
+}
+
+type MetricSnapshot struct {
+	Timestamp int64   `json:"timestamp"`
+	CPUUsage  float64 `json:"cpu_usage"` // in Cores
+	MemUsage  float64 `json:"mem_usage"` // in MiB
 }
 
 type RawK8sMetricsList struct {
@@ -181,6 +188,8 @@ func main() {
 	config.Clientset = clientset
 
 	config.ConnectDatabase()
+	InitRedis("localhost:6379")
+	StartClusterBlackBox(context.Background())
 
 	dynamicClient, _ = dynamic.NewForConfig(k8sConfig)
 	discoveryClient, _ = discovery.NewDiscoveryClientForConfig(k8sConfig)
@@ -225,6 +234,8 @@ func main() {
 		api.POST("/cluster/pods/update-config", addConfigToExistingPod)
 		api.DELETE("/cluster/config/delete", deleteConfigBlock)
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
+		api.GET("/cluster/metrics/history", getMetricsHistory)
+		api.GET("/cluster/incidents", getClusterIncidents)
 	}
 
 	if err := r.Run(":8080"); err != nil {
@@ -320,6 +331,80 @@ func broadcastToWebSockets(logEntry models.ClusterLog) {
 	}
 }
 
+func getClusterIncidents(c *gin.Context) {
+	streamKey := "k8s:incidents:stream"
+
+	// for pagination
+	startID := c.Query("start_id")
+	nsFilter := c.Query("namespace")
+	searchFilter := strings.ToLower(c.Query("search"))
+
+	if startID == "" || startID == "+" || startID == " " || startID == "all" {
+		startID = "+"
+	}
+
+	incidents := []ClusterIncident{}
+	var lastEvaluatedID string
+
+	// fetch chunks until 50 items or run out of history
+	currentStart := startID
+	for len(incidents) < 50 {
+
+		// 100 entries to scan efficiently
+		results, err := redisClient.XRevRangeN(c.Request.Context(), streamKey, currentStart, "-", 100).Result()
+		if err != nil || len(results) == 0 {
+			break
+		}
+
+		if currentStart != "+" && len(results) > 0 && results[0].ID == currentStart {
+			results = results[1:]
+			if len(results) == 0 {
+				break
+			}
+		}
+
+		for _, entry := range results {
+			lastEvaluatedID = entry.ID
+
+			rawPayload, exists := entry.Values["payload"]
+			if !exists {
+				continue
+			}
+
+			var incident ClusterIncident
+			if err := json.Unmarshal([]byte(rawPayload.(string)), &incident); err == nil {
+				if nsFilter != "" && nsFilter != "all" && incident.Namespace != nsFilter {
+					continue
+				}
+				if searchFilter != "" {
+					messageMatch := strings.Contains(strings.ToLower(incident.Message), searchFilter)
+					podMatch := strings.Contains(strings.ToLower(incident.PodName), searchFilter)
+					if !messageMatch && !podMatch {
+						continue // skip if it doesn't match
+					}
+				}
+
+				incidents = append(incidents, incident)
+				if len(incidents) == 50 {
+					break
+				}
+			}
+		}
+
+		if len(results) < 100 || len(incidents) == 50 {
+			break
+		}
+
+		// move the cursor backwards for the next iteration chunk fetch
+		currentStart = lastEvaluatedID
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"incidents":   incidents,
+		"next_cursor": lastEvaluatedID,
+	})
+}
+
 func getClusterSummary(c *gin.Context) {
 	if clientset == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kubernetes client uninitialized"})
@@ -330,6 +415,22 @@ func getClusterSummary(c *gin.Context) {
 	nsFilter := c.Query("namespace")
 	if nsFilter == "all" || nsFilter == "*" || nsFilter == "" {
 		nsFilter = ""
+	}
+
+	cacheKeyNamespace := nsFilter
+	if cacheKeyNamespace == "" {
+		cacheKeyNamespace = "all"
+	}
+	cacheKey := fmt.Sprintf("k8s:summary:%s", cacheKeyNamespace)
+
+	cachedJSON, err := redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var cachedSummary map[string]interface{}
+		if json.Unmarshal([]byte(cachedJSON), &cachedSummary) == nil {
+			c.Header("X-Cache", "HIT")
+			c.JSON(http.StatusOK, cachedSummary)
+			return
+		}
 	}
 
 	// pod length count for filtered namespace
@@ -374,6 +475,18 @@ func getClusterSummary(c *gin.Context) {
 		if clusterStatus == "Degraded" {
 			break
 		}
+	}
+
+	// save summary to redis
+	summaryData := gin.H{
+		"podsCount":     len(pods.Items),
+		"nodesTotal":    len(nodes.Items),
+		"clusterStatus": clusterStatus,
+	}
+
+	summaryBytes, err := json.Marshal(summaryData)
+	if err == nil {
+		_ = redisClient.Set(ctx, cacheKey, summaryBytes, 5*time.Second).Err()
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -458,6 +571,10 @@ func deployNewPod(c *gin.Context) {
 		return
 	}
 
+	cacheKeySpecific := fmt.Sprintf("k8s:pods:%s", req.Namespace)
+	_ = redisClient.Del(ctx, cacheKeySpecific, "k8s:pods:all").Err()
+	_ = redisClient.Del(ctx, fmt.Sprintf("k8s:summary:%s", req.Namespace), "k8s:summary:all").Err()
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Pod specification deployed successfully!",
 	})
@@ -473,6 +590,26 @@ func getClusterPods(c *gin.Context) {
 	nsFilter := c.Query("namespace")
 	if nsFilter == "all" || nsFilter == "*" || nsFilter == "" {
 		nsFilter = ""
+	}
+
+	// redis cache
+	cacheKeyNamespace := nsFilter
+	if cacheKeyNamespace == "" {
+		cacheKeyNamespace = "all"
+	}
+	cacheKey := fmt.Sprintf("k8s:pods:%s", cacheKeyNamespace)
+
+	cachedJSON, err := redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var cachedPodList []PodTableEntry
+		// uf serialization matches, bring from cache
+		if json.Unmarshal([]byte(cachedJSON), &cachedPodList) == nil {
+			c.Header("X-Cache", "HIT") // header for debugging in browser network tab
+			c.JSON(http.StatusOK, gin.H{
+				"pods": cachedPodList,
+			})
+			return
+		}
 	}
 
 	// get pod
@@ -551,6 +688,14 @@ func getClusterPods(c *gin.Context) {
 				LastTermState: lastTermState,
 			})
 	}
+
+	podBytes, err := json.Marshal(podList)
+	if err == nil {
+		// cache with a 5-second TTL window
+		_ = redisClient.Set(ctx, cacheKey, podBytes, 5*time.Second).Err()
+	}
+
+	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, gin.H{
 		"pods": podList,
 	})
@@ -580,6 +725,13 @@ func deleteClusterPod(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// pod was deleted -> cached pod list and summary are stale
+	cacheKeySpecific := fmt.Sprintf("k8s:pods:%s", namespace)
+	_ = redisClient.Del(ctx, cacheKeySpecific, "k8s:pods:all").Err()
+
+	// if cache, evict them
+	_ = redisClient.Del(ctx, fmt.Sprintf("k8s:summary:%s", namespace), "k8s:summary:all").Err()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Pod termination sequence executed cleanly"})
 }
@@ -1219,7 +1371,7 @@ func broadcastMetricsInBackground() {
 
 	transport, err := rest.TransportFor(k8sConfig)
 	if err != nil {
-		log.Printf("⚠️ Failed to create metrics transport: %v\n", err)
+		log.Printf("Failed to create metrics transport: %v\n", err)
 		return
 	}
 
@@ -1245,7 +1397,7 @@ func broadcastMetricsInBackground() {
 		// query the metrics endpoint using http client
 		resp, err := httpClient.Get(metricsURL)
 		if err != nil {
-			log.Printf("⚠️ Metrics Server Connection Failure: %v\n", err)
+			log.Printf("Metrics Server Connection Failure: %v\n", err)
 			continue
 		}
 
@@ -1253,22 +1405,25 @@ func broadcastMetricsInBackground() {
 		_ = resp.Body.Close()
 
 		if err != nil {
-			log.Printf("⚠️ Failed to read metrics response body: %v\n", err)
+			log.Printf("Failed to read metrics response body: %v\n", err)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("⚠️ Metrics Server returned HTTP %d: %s\n", resp.StatusCode, string(rawBytes))
+			log.Printf("Metrics Server returned HTTP %d: %s\n", resp.StatusCode, string(rawBytes))
 			continue
 		}
 
 		var metricsList RawK8sMetricsList
 		if err := json.Unmarshal(rawBytes, &metricsList); err != nil {
-			log.Printf("⚠️ JSON Parsing Failure: %v\n", err)
+			log.Printf("JSON Parsing Failure: %v\n", err)
 			continue
 		}
 
 		log.Printf("Processing telemetry fields for %d target cluster pods...\n", len(metricsList.Items))
+
+		var clusterTotalCPU int64
+		var clusterTotalMem int64
 
 		for _, item := range metricsList.Items {
 			var totalCPU int64
@@ -1320,6 +1475,10 @@ func broadcastMetricsInBackground() {
 				}
 			}
 
+			// add to toal for redis
+			clusterTotalCPU += totalCPU
+			clusterTotalMem += totalMem
+
 			payload := PodResourceMetrics{
 				PodName:   item.Metadata.Name,
 				Namespace: item.Metadata.Namespace,
@@ -1346,7 +1505,63 @@ func broadcastMetricsInBackground() {
 			}
 			notificationMutex.Unlock()
 		}
+
+		now := time.Now()
+		snapshot := MetricSnapshot{
+			Timestamp: now.Unix(),
+			CPUUsage:  float64(clusterTotalCPU), // total cluster millicores
+			MemUsage:  float64(clusterTotalMem), // total cluster MiB
+		}
+
+		snapshotBytes, err := json.Marshal(snapshot)
+		if err == nil {
+			key := "k8s:metrics:history:all"
+			// add to Redis Sorted Set using timestamp score
+			_ = redisClient.ZAdd(ctx, key, redis.Z{
+				Score:  float64(snapshot.Timestamp),
+				Member: string(snapshotBytes),
+			}).Err()
+
+			// retain only the last 2 hours
+			twoHoursAgo := now.Add(-2 * time.Hour).Unix()
+			_ = redisClient.ZRemRangeByScore(ctx, key, "-inf", fmt.Sprintf("%d", twoHoursAgo)).Err()
+		}
 	}
+}
+
+func getMetricsHistory(c *gin.Context) {
+	// key := "k8s:metrics:history"
+	nsFilter := c.DefaultQuery("namespace", "all")
+	if nsFilter == "" || nsFilter == "*" {
+		nsFilter = "all"
+	}
+
+	key := fmt.Sprintf("k8s:metrics:history:%s", nsFilter)
+
+	// fetch all historical snapshots stored inside Sorted Set
+	rawSnapshots, err := redisClient.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     key,
+		Start:   "-inf", // minimum score
+		Stop:    "+inf", // maximum score
+		ByScore: true,   // tells the ZRANGE command to treat Start/Stop as scores
+	}).Result()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull time-series array"})
+		return
+	}
+
+	var history []MetricSnapshot
+	for _, rawStr := range rawSnapshots {
+		var snap MetricSnapshot
+		if json.Unmarshal([]byte(rawStr), &snap) == nil {
+			history = append(history, snap)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
 }
 
 func applyClusterManifest(c *gin.Context) {
@@ -1430,6 +1645,34 @@ func applyClusterManifest(c *gin.Context) {
 		"applied": processedObjects,
 	})
 }
+
+// func getMetricsHistory(c *gin.Context) {
+// 	key := "k8s:metrics:history"
+
+// 	// fetch all items from the last 2 hours from Sorted Set
+// 	rawSnapshots, err := redisClient.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+// 		Min: "-inf",
+// 		Max: "+inf",
+// 	}).Result()
+
+// 	if err != nil {
+// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull time-series indices"})
+// 		return
+// 	}
+
+// 	// ordered array
+// 	var history []RawK8sMetricsList
+// 	for _, rawStr := range rawSnapshots {
+// 		var snap RawK8sMetricsList
+// 		if json.Unmarshal([]byte(rawStr), &snap) == nil {
+// 			history = append(history, snap)
+// 		}
+// 	}
+
+// 	c.JSON(http.StatusOK, gin.H{
+// 		"history": history,
+// 	})
+// }
 
 func homeDir() string {
 	home, err := os.UserHomeDir()
