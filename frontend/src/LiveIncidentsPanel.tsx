@@ -49,6 +49,17 @@ export default function LiveIncidentStreamPanel({
     }
   };
 
+  const getReasonBadgeStyles = (reason: string) => {
+    const r = reason.toLowerCase();
+    if (r.includes("oom") || r.includes("kill") || r.includes("crash")) {
+      return "bg-red-500/10 text-red-600 border border-red-500/20 font-bold";
+    }
+    if (r.includes("failed") || r.includes("backoff") || r.includes("err")) {
+      return "bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold";
+    }
+    return "bg-slate-500/10 text-slate-600 border border-slate-500/20";
+  };
+
   useEffect(() => {
     // reset back to top page if the user changes the namespace
     setCurrentCursor("+");
@@ -137,7 +148,9 @@ export default function LiveIncidentStreamPanel({
                   className="hover:bg-red-500/5 transition-colors bg-white"
                 >
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono tracking-wide bg-red-100 text-red-800 border border-red-200">
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wide ${getReasonBadgeStyles(item.reason)}`}
+                    >
                       {item.reason}
                     </span>
                   </td>
