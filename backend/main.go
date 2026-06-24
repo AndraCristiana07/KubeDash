@@ -334,31 +334,58 @@ func broadcastToWebSockets(logEntry models.ClusterLog) {
 func getClusterIncidents(c *gin.Context) {
 	streamKey := "k8s:incidents:stream"
 
-	// fetch items from the stream from the newest to oldest, with 50 limit
-	results, err := redisClient.XRevRangeN(c.Request.Context(), streamKey, "+", "-", 50).Result()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to extract incident ledger from stream"})
-		return
+	// for pagination
+	startID := c.Query("start_id")
+	nsFilter := c.Query("namespace")
+
+	if startID == "" || startID == "+" || startID == " " || startID == "all" {
+		startID = "+"
 	}
 
-	// if stream is empty, return an empty array instead of null
 	incidents := []ClusterIncident{}
+	var lastEvaluatedID string
 
-	for _, entry := range results {
-		rawPayload, exists := entry.Values["payload"]
-		if !exists {
-			continue
+	// fetch chunks until 50 items or run out of history
+	currentStart := startID
+	for len(incidents) < 50 {
+		// 100 entries to scan efficiently
+		results, err := redisClient.XRevRangeN(c.Request.Context(), streamKey, currentStart, "-", 100).Result()
+		if err != nil || len(results) == 0 {
+			break
 		}
 
-		// convert the raw string payload back into structured ClusterIncident object
-		var incident ClusterIncident
-		if err := json.Unmarshal([]byte(rawPayload.(string)), &incident); err == nil {
-			incidents = append(incidents, incident)
+		for _, entry := range results {
+			lastEvaluatedID = entry.ID
+
+			rawPayload, exists := entry.Values["payload"]
+			if !exists {
+				continue
+			}
+
+			var incident ClusterIncident
+			if err := json.Unmarshal([]byte(rawPayload.(string)), &incident); err == nil {
+				if nsFilter != "" && nsFilter != "all" && incident.Namespace != nsFilter {
+					continue
+				}
+
+				incidents = append(incidents, incident)
+				if len(incidents) == 50 {
+					break
+				}
+			}
 		}
+
+		if len(results) < 100 || len(incidents) == 50 {
+			break
+		}
+
+		// move the cursor backwards for the next iteration chunk fetch
+		currentStart = lastEvaluatedID
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"incidents": incidents,
+		"incidents":   incidents,
+		"next_cursor": lastEvaluatedID,
 	})
 }
 

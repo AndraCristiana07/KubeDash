@@ -70,7 +70,9 @@ cd backend && go run .
 cd frontend && npm start
 ```
 
-## Metrics row
+## Overview page
+
+### Metrics row
 
 - Health displayed. If one enters the Failed Phase or it's pending but gets a crash message it goes to Degraded, instead of Healthy
 
@@ -78,9 +80,9 @@ cd frontend && npm start
 
 - Total Pod length count from all namespaces
 
-## Action panel
+### Action panel
 
-Can now add pods from frontend:
+You can add pods from frontend:
 
 - Click on Deploy New Pod
 - This will open a modal form
@@ -115,6 +117,8 @@ Can now add pods from frontend:
 
 Here you can see all pods (depending on chosen namespace) with pod name, namespace, status, image, age (since when it's active) and actions.
 Below the container name, there are badges if the pod has a ConfigMap or a Secret set. These are clickable to see the information about them.
+There's also badges for restarts and last cause of crash, if it exists.
+There's also s main error message (if it exists: e.g. ImagePullBackOff).
 
 Actions:
 
@@ -125,7 +129,10 @@ Actions:
 
 ## Audit Table
 
-Here you can see all logs paginated with search and filtes for severity. You can also set how many logs per page you can see.
+Here you can see 2 tabs:
+
+- Active clusters logs (db), where logs paginated with search and filtes for severity. You can also set how many logs per page you can see.
+- History clusters failures logs (redis), where there are logs stored from more than 2 hours (how long Kubernetes will store them)
 
 ## Hardware metrics
 
@@ -142,4 +149,4 @@ On this page there are 3 tabs:
 
 - on one there is a live table with metrics over pods with cpu load, RAM allocation NVIDIA GPU COMPUTE and status
 - on the second one they are live spikelines on history of hardware metrics
-- on the thrid one, they are charts for CPU and Memory usage from the time it started (usually first time opening the app) to present
+- on the thrid one, they are charts for CPU and Memory usage from the time it started (usually first time opening the app) to present. These are stored in Redis
