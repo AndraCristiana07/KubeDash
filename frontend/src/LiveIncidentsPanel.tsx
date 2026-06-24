@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import SearchIcon from "@mui/icons-material/Search";
 
 interface IncidentItem {
   namespace: string;
@@ -22,13 +23,13 @@ export default function LiveIncidentStreamPanel({
   const [currentCursor, setCurrentCursor] = useState<string>("+");
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchStream = async (cursorToUse = currentCursor) => {
     setLoading(true);
     try {
       const nsParam = activeNamespace === "all" ? "" : activeNamespace;
-      const url = `${goApiUrl}/api/cluster/incidents?start_id=${encodeURIComponent(cursorToUse)}&namespace=${nsParam}`;
-
+      const url = `${goApiUrl}/api/cluster/incidents?start_id=${encodeURIComponent(cursorToUse)}&namespace=${nsParam}&search=${encodeURIComponent(searchQuery)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Faulty response");
       const body = await res.json();
@@ -79,7 +80,33 @@ export default function LiveIncidentStreamPanel({
         <strong>Live Stream:</strong> Displaying 50 active telemetry warnings
         intercepted directly out of Redis memory stores.
       </div>
-
+      {/* filters */}
+      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between bg-[#E7E1B1]/10 border border-[#E7E1B1]/60 p-3 rounded-xl shadow-2xs w-full mb-4">
+        <div className="relative flex-1 max-w-md flex items-center">
+          <span className="absolute left-3 text-slate-400 flex items-center pointer-events-none">
+            <SearchIcon fontSize="small" />
+          </span>
+          <input
+            type="text"
+            placeholder="Search message or pod..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && fetchStream()}
+            className="w-full pl-9 pr-4 py-1.5 bg-white border border-[#E7E1B1] rounded-lg text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-[#306D29] focus:border-[#306D29] transition-all shadow-2xs"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setTimeout(fetchStream, 10);
+              }}
+              className="absolute right-2.5 top-2 text-[#306D29] hover:text-[#0D530E] text-xs"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
       <div className="overflow-x-auto rounded-lg border border-[#E7E1B1] max-h-[520px] bg-white">
         <table className="w-full text-left border-collapse table-auto text-xs">
           <thead>

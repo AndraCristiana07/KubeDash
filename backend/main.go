@@ -337,6 +337,7 @@ func getClusterIncidents(c *gin.Context) {
 	// for pagination
 	startID := c.Query("start_id")
 	nsFilter := c.Query("namespace")
+	searchFilter := strings.ToLower(c.Query("search"))
 
 	if startID == "" || startID == "+" || startID == " " || startID == "all" {
 		startID = "+"
@@ -348,10 +349,18 @@ func getClusterIncidents(c *gin.Context) {
 	// fetch chunks until 50 items or run out of history
 	currentStart := startID
 	for len(incidents) < 50 {
+
 		// 100 entries to scan efficiently
 		results, err := redisClient.XRevRangeN(c.Request.Context(), streamKey, currentStart, "-", 100).Result()
 		if err != nil || len(results) == 0 {
 			break
+		}
+
+		if currentStart != "+" && len(results) > 0 && results[0].ID == currentStart {
+			results = results[1:]
+			if len(results) == 0 {
+				break
+			}
 		}
 
 		for _, entry := range results {
@@ -366,6 +375,13 @@ func getClusterIncidents(c *gin.Context) {
 			if err := json.Unmarshal([]byte(rawPayload.(string)), &incident); err == nil {
 				if nsFilter != "" && nsFilter != "all" && incident.Namespace != nsFilter {
 					continue
+				}
+				if searchFilter != "" {
+					messageMatch := strings.Contains(strings.ToLower(incident.Message), searchFilter)
+					podMatch := strings.Contains(strings.ToLower(incident.PodName), searchFilter)
+					if !messageMatch && !podMatch {
+						continue // skip if it doesn't match
+					}
 				}
 
 				incidents = append(incidents, incident)
