@@ -10,6 +10,16 @@ test("Verify environment map injection modal", async () => {
     ],
   });
 
+  interface ExpectedPayload {
+    pod_name: string;
+    namespace: string;
+    config_name: string;
+    mappings: Array<{
+      source_key: string;
+      env_key: string;
+    }>;
+  }
+
   const page = await electronApp.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -51,7 +61,7 @@ test("Verify environment map injection modal", async () => {
   });
 
   const targetApiRoute = "**/api/cluster/pods/update-config";
-  let interceptedPayload: any = null;
+  let interceptedPayload: unknown = null;
 
   await page.route(targetApiRoute, async (route) => {
     interceptedPayload = route.request().postDataJSON();
@@ -136,7 +146,7 @@ test("Verify environment map injection modal", async () => {
   expect(interceptedPayload).toHaveProperty("pod_name", "auth-service-v1-7f4c");
   expect(interceptedPayload).toHaveProperty("namespace", "production");
   expect(interceptedPayload).toHaveProperty("config_name", "app-feature-flags");
-  expect(interceptedPayload.mappings).toEqual([
+  expect((interceptedPayload as ExpectedPayload).mappings).toEqual([
     { source_key: "ENABLE_NEW_DASHBOARD", env_key: "TEST_LOWERCASE_ENV_KEY" },
     { source_key: "MAX_RETRY_ATTEMPTS", env_key: "MAX_RETRY_ATTEMPTS" },
   ]);

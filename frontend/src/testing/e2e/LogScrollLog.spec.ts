@@ -1,5 +1,19 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 
+interface MockWebSocket {
+  url: string;
+  readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+  send: () => void;
+  close: () => void;
+}
+interface CustomWindow extends Window {
+  mockLogSocket: MockWebSocket;
+}
+
 test("Verify log stream auto-scroll pins to bottom and unlocks gracefully on manual scroll up", async () => {
   const electronApp = await electron.launch({
     args: [
@@ -36,22 +50,24 @@ test("Verify log stream auto-scroll pins to bottom and unlocks gracefully on man
 
   // mock websocket
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
-      const self = {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
+      const self: MockWebSocket = {
         url: url,
         readyState: 0,
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
-        send: function (data: any) {},
+        onopen: null as (() => void) | null,
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        send: function () {},
         close: function () {
           self.readyState = 3;
           if (typeof self.onclose === "function") self.onclose();
         },
       };
 
-      (window as any).mockLogSocket = self;
+      (window as unknown as CustomWindow).mockLogSocket = self;
 
       setTimeout(() => {
         self.readyState = 1;
@@ -122,11 +138,9 @@ test("Verify log stream auto-scroll pins to bottom and unlocks gracefully on man
   await page.waitForTimeout(100);
 
   await page.evaluate(() => {
-    if (
-      (window as any).mockLogSocket &&
-      typeof (window as any).mockLogSocket.onmessage === "function"
-    ) {
-      (window as any).mockLogSocket.onmessage({
+    const mockSocket = (window as unknown as CustomWindow).mockLogSocket;
+    if (mockSocket && typeof mockSocket.onmessage === "function") {
+      mockSocket.onmessage({
         data: "CRITICAL: Brand new incoming live event that shouldn't bounce the screen!\n",
       });
     }
@@ -157,9 +171,12 @@ test("Verify log stream auto-scroll pins to bottom and unlocks gracefully on man
   await page.waitForTimeout(100);
 
   await page.evaluate(() => {
-    (window as any).mockLogSocket.onmessage({
-      data: "INFO: Final confirmation alignment string chunk.\n",
-    });
+    const mockSocket = (window as unknown as CustomWindow).mockLogSocket;
+    if (mockSocket && typeof mockSocket.onmessage === "function") {
+      mockSocket.onmessage({
+        data: "INFO: Final confirmation alignment string chunk.\n",
+      });
+    }
   });
 
   await page.waitForTimeout(200);

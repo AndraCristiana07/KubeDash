@@ -39,16 +39,18 @@ test("Verify log stream modal catches abrupt socket disconnections", async () =>
 
   // mock websocket
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       const self = {
         url: url,
         readyState: 0, // CONNECTING
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
+        onopen: null as (() => void) | null,
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        onerror: null as (() => void) | null,
 
-        send: function (data: any) {},
+        send: function () {},
         close: function () {
           self.readyState = 3; // CLOSED
           if (typeof self.onclose === "function") {
@@ -57,7 +59,7 @@ test("Verify log stream modal catches abrupt socket disconnections", async () =>
         },
       };
 
-      (window as any).mockLogSocket = self;
+      (window as unknown as { mockLogSocket: unknown }).mockLogSocket = self;
 
       setTimeout(() => {
         self.readyState = 1; // OPEN
@@ -103,11 +105,10 @@ test("Verify log stream modal catches abrupt socket disconnections", async () =>
 
   // disconnect socket
   await page.evaluate(() => {
-    if (
-      (window as any).mockLogSocket &&
-      typeof (window as any).mockLogSocket.close === "function"
-    ) {
-      (window as any).mockLogSocket.close();
+    const mockSocket = (window as unknown as { mockLogSocket: unknown })
+      .mockLogSocket as unknown as { close: () => void };
+    if (mockSocket && typeof mockSocket.close === "function") {
+      mockSocket.close();
     }
   });
 

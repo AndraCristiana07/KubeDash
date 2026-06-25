@@ -66,7 +66,9 @@ test("Verify high-density data tables handle rapid search filtering and structur
 
   // mock websocket
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       return {
         url: url,
         readyState: 0,

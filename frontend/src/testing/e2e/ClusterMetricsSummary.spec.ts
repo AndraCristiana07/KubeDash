@@ -13,16 +13,18 @@ test("Verify live hardware summary specs", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       const self = {
         url: url,
         readyState: 0, // CONNECTING
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
+        onopen: null as (() => void) | null,
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        onerror: null as (() => void) | null,
 
-        send: function (data: any) {},
+        send: function () {},
         close: function () {
           self.readyState = 3; // CLOSED
           if (typeof self.onclose === "function") self.onclose();

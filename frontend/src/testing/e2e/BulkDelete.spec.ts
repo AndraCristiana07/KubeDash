@@ -84,7 +84,9 @@ test("Verify batch checkbox selects all visible workloads and fires bulk deletio
 
   await page.addInitScript(() => {
     window.confirm = () => true;
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       return {
         url,
         readyState: 0,

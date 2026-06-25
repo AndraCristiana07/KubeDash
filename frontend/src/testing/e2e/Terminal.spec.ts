@@ -1,5 +1,21 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 
+interface MockTerminalSocket {
+  url: string;
+  readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+  send: (data: string | ArrayBufferView | Blob | ArrayBuffer) => void;
+  close: () => void;
+}
+
+interface CustomTerminalWindow extends Omit<Window, "WebSocket"> {
+  currentMockSocket: MockTerminalSocket;
+  WebSocket: (url: string) => MockTerminalSocket;
+}
+
 test("Verify navigation to Pods view, launching interactive shell, and streaming raw inputs", async () => {
   const electronApp = await electron.launch({
     args: [
@@ -54,20 +70,22 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
   });
 
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
-      const self = {
+    (window as unknown as CustomTerminalWindow).WebSocket = function (
+      url: string,
+    ) {
+      const self: MockTerminalSocket = {
         url: url,
         readyState: 0, // CONNECTING
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
 
-        send: function (data: any) {
-          (window as any).currentMockSocket = self;
+        send: function (data: string | ArrayBufferView | Blob | ArrayBuffer) {
+          (window as unknown as CustomTerminalWindow).currentMockSocket = self;
           setTimeout(() => {
             if (typeof self.onmessage === "function") {
-              self.onmessage({ data: data });
+              self.onmessage({ data: data.toString() });
             }
           }, 10);
         },
@@ -94,7 +112,7 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
             data: "root@auth-service-v1-7f4c:/# ",
           });
         }
-        (window as any).currentMockSocket = self;
+        (window as unknown as CustomTerminalWindow).currentMockSocket = self;
       }, 50);
 
       return self;
@@ -141,11 +159,9 @@ test("Verify navigation to Pods view, launching interactive shell, and streaming
 
   // check terminal works
   await page.evaluate(() => {
-    if (
-      (window as any).currentMockSocket &&
-      typeof (window as any).currentMockSocket.onmessage === "function"
-    ) {
-      (window as any).currentMockSocket.onmessage({ data: "uname -a\r\n" });
+    const ws = (window as unknown as CustomTerminalWindow).currentMockSocket;
+    if (ws && typeof ws.onmessage === "function") {
+      ws.onmessage({ data: "uname -a\r\n" });
     }
   });
 

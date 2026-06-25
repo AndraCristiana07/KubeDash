@@ -1,5 +1,20 @@
 import { test, expect, _electron as electron } from "@playwright/test";
-import * as fs from "fs";
+
+interface MockWebSocket {
+  url: string;
+  readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+  send: (data: string | ArrayBufferView | Blob | ArrayBuffer) => void;
+  close: () => void;
+}
+
+interface CustomWindow extends Omit<Window, "WebSocket"> {
+  mockLogSocket: MockWebSocket;
+  WebSocket: (url: string) => MockWebSocket;
+}
 
 test("Verify live log stream", async () => {
   const electronApp = await electron.launch({
@@ -55,16 +70,16 @@ test("Verify live log stream", async () => {
   });
 
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
-      const self = {
+    (window as unknown as CustomWindow).WebSocket = function (url: string) {
+      const self: MockWebSocket = {
         url: url,
         readyState: 0, // CONNECTING
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
 
-        send: function (data: any) {},
+        send: function () {},
         close: function () {
           self.readyState = 3; // CLOSED
           if (typeof self.onclose === "function") {
@@ -73,7 +88,7 @@ test("Verify live log stream", async () => {
         },
       };
 
-      (window as any).mockLogSocket = self;
+      (window as unknown as CustomWindow).mockLogSocket = self;
 
       setTimeout(() => {
         self.readyState = 1; // OPEN
@@ -119,11 +134,9 @@ test("Verify live log stream", async () => {
 
   // trigger telemetry pipeline mock injects
   await page.evaluate(() => {
-    if (
-      (window as any).mockLogSocket &&
-      typeof (window as any).mockLogSocket.onmessage === "function"
-    ) {
-      (window as any).mockLogSocket.onmessage({
+    const ws = (window as unknown as CustomWindow).mockLogSocket;
+    if (ws && typeof ws.onmessage === "function") {
+      ws.onmessage({
         data: "WARN: Out of memory threshold warnings detected.\nERROR: NullPointerException crash dumped safely.\n",
       });
     }
@@ -159,8 +172,9 @@ test("Verify live log stream", async () => {
   await expect(page.locator("text=CONSOLE BUFFER FROZEN")).toBeVisible();
 
   await page.evaluate(() => {
-    if ((window as any).mockLogSocket) {
-      (window as any).mockLogSocket.onmessage({
+    const ws = (window as unknown as CustomWindow).mockLogSocket;
+    if (ws && typeof ws.onmessage === "function") {
+      ws.onmessage({
         data: "INFO: This entry should drop entirely during freeze mode.\n",
       });
     }

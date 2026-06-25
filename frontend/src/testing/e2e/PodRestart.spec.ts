@@ -13,7 +13,7 @@ test("Verify pod restart action triggers loader state spin, displays toast alert
   const page = await electronApp.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  let mockPodsList = [
+  const mockPodsList = [
     {
       name: "terminator-service-pod",
       namespace: "production",
@@ -58,7 +58,9 @@ test("Verify pod restart action triggers loader state spin, displays toast alert
 
   // mock websocket
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       return {
         url: url,
         readyState: 0,
