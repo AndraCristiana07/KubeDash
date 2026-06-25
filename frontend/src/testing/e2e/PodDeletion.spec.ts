@@ -60,14 +60,17 @@ test("Verify pod deletion removes table rows and dynamically updates metrics", a
   });
 
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       return {
         url: url,
         readyState: 0,
-        onopen: null,
-        onmessage: null,
-        onclose: null,
-        onerror: null,
+        onopen: null as (() => void) | null,
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+
         send: function () {},
         close: function () {},
       };

@@ -24,8 +24,9 @@ test("Verify cluster variable resource mapping and rows", async () => {
       const url =
         typeof input === "string"
           ? input
-          : (input as any).url || (input as any).href || "";
-
+          : input instanceof URL
+            ? input.href
+            : (input as Request).url || "";
       if (
         url.includes("config") ||
         url.includes("secret") ||

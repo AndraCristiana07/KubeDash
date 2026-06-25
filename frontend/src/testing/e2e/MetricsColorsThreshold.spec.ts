@@ -15,15 +15,18 @@ test("Verify UI progress bar colors based on levels", async () => {
 
   // mock websocket
   await page.addInitScript(() => {
-    (window as any).WebSocket = function (url: string) {
+    (window as unknown as { WebSocket: unknown }).WebSocket = function (
+      url: string,
+    ) {
       const self = {
         url: url,
         readyState: 0,
-        onopen: null as any,
-        onmessage: null as any,
-        onclose: null as any,
-        onerror: null as any,
-        send: function (data: any) {},
+        onopen: null as (() => void) | null,
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+
+        send: function () {},
         close: function () {
           self.readyState = 3;
           if (typeof self.onclose === "function") self.onclose();
