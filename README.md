@@ -1,15 +1,29 @@
 # KubeDash
 
-A local log and metrics aggregator
+A local log and metrics aggregator designed to provide real-time visibility, debugging and management features for your Kubernetes clusrers.
 
-Prerequisites:
+## Key Features
+
+- Real-time metrics and overviews: Track cluster health (healthy or degraded), active node/pods counts
+- Live hardware monitoring: CPU, Memory and NVIDIA GPU compute tracking with the help of a local Kubernetes metrics sercer with live sparklines and historical Redis charts
+- Log affregation and retention: dual-layer log auditing with a paginated searchable DB logs, alongside a persistent Redis cache for historical failures (to retain data beyond the Kubernetes 2 hour window)
+- Config management: A live UI matrix to view, create, edit, inject or delete ConfigMaps and Secrets
+
+## Prerequisites:
+
 Before starting, make sure you have these installed on your machine:
 
-- Docker
-- Kind
+- Docker and Docker compose
+- Kind (Kubernetes in Docker)
 - kubectl
+- Go
+- Node.js and npm
 
-Init: 0. Go into the backend folder
+## Getting started and installation
+
+Follow these steps sequntially to get stated on your local development environment.
+
+0. Go into the backend folder
 
 ```sh
 cd backend
@@ -58,10 +72,10 @@ kubectl patch -n kube-system deployment metrics-server --type=json \
 docker compose up -d
 ```
 
-7. In another terminal, run the backend:
+7. Run the backend:
 
 ```sh
-cd backend && go run .
+go run .
 ```
 
 8. Open another terminal to run the frontend
@@ -70,73 +84,134 @@ cd backend && go run .
 cd frontend && npm start
 ```
 
-## Overview page
+You can also install redis-cli to check everything is working. To run it:
 
-### Metrics row
+```sh
+redis-cli monitor
+```
 
-- Health displayed. If one enters the Failed Phase or it's pending but gets a crash message it goes to Degraded, instead of Healthy
+## API Reference
 
-- Active nodes displayed
+The backend exposes a REST and WebSocket API under the :8080/api group.
 
-- Total Pod length count from all namespaces
+### Log management
 
-### Action panel
+| Method | Endpoint           | Description                                      |
+| ------ | ------------------ | ------------------------------------------------ |
+| POST   | /api/logs          | Create/ injest a new log entry                   |
+| GET    | /api/logs          | Retrieve paginated cluster logs with filters     |
+| GET    | /api/logs/overview | Fetch an overview summary of recent log statuses |
 
-You can add pods from frontend:
+### Cluster orchestration and pod action
 
-- Click on Deploy New Pod
-- This will open a modal form
-- Here, give the pod a name and a container image and click Launch
-- It will take a bit to deploy
-- After that, the modal closes and the logs will show
-- Logs take 4 seconds to refresh, but you can manually refresh it from this section
+| Method | Endpoint                     | Description                                           |
+| ------ | ---------------------------- | ----------------------------------------------------- |
+| GET    | /api/cluster/summary         | Get structural summary details of the active cluster  |
+| POST   | /api/cluster/deploy          | Deploy a new pod via container image specifications   |
+| GET    | /api/cluster/pods            | Fetch a list of running pods filtered by namespace    |
+| DELETE | /api/cluster/pods            | Gracefully terminate a specific pod (kubectl delete)  |
+| POST   | /api/cluster/restart         | Gracefully trigger a rolling restart for a deployment |
+| POST   | /api/cluster/manifests/apply | Programmatically apply a raw Kubernetes YAML manifest |
+
+### Real time streaming
+
+| Method | Endpoint                   | Description                                                   |
+| ------ | -------------------------- | ------------------------------------------------------------- |
+| GET    | /api/cluster/ssh           | Establishes an interactive terminal SSH connection into a pod |
+| GET    | /api/cluster/logs/stream   | Streams live container logs                                   |
+| GET    | /api/cluster/notifications | Stream live cluster event notifications and alerts            |
+
+### Configuration Management
+
+| Method | Endpoint                          | Description                                          |
+| ------ | --------------------------------- | ---------------------------------------------------- |
+| GET    | /api/cluster/config               | Retrieve existing ConfigMaps and Secrets             |
+| POST   | /api/cluster/config/create        | Create new ConfigMap or Secret block                 |
+| POST   | /api/cluster/config/update        | Update fields inside an existing configuration block |
+| POST   | /api/cluster/config/update-config | Inject a configuration block into a live pod         |
+| DELETE | /api/cluster/config/delete        | Permanently delete a specified configuration block   |
+
+### Metrics and analytics
+
+| Method | Endpoint                     | Description                                                  |
+| ------ | ---------------------------- | ------------------------------------------------------------ |
+| GET    | /api/cluster/metrics/history | Retrieve historic data for CPU/RAM usage                     |
+| GET    | /api/cluster/config/create   | Fetch cluster incident logs, crashes and errors              |
+| GET    | /api/cluster/inc idents      | Update fields inside an existing configuration block         |
+| POST   | /api/cluster/topology        | Generate a graphical or structural layout map of the cluster |
+
+## Dashboard Walkthrough
+
+### Overview page
+
+![overview](./images/overview.png)
+
+- Metrics row: Displays aggregate data, including real-time node count and total cluster pods. If one pod enters the Failed Phase or it's pending but gets a crash message the overall health goes from Healthy to Degraded
+
+- Action panel: Allows users to rapidly deploy new pods from a modal interface. Here you will have to gibe the pod a name and image target to deploy. Once deployed, the logs render automatically (polling every 4 seconds by default, but users can refresh manually too)
+
+![deployment](./images/deployment_modal.png)
+
+When deploying a new pod you can also choose to deploy it by a direct YAML file, where you can write the YAML or drag and drop a file
+![manifest](./images/manifest_modal.png)
 
 ## Settings
 
-- Set interval for logs fetching
-- Set namespace
-- Setting ConfigMaps and Secrets
-  - For creating a new one, click on the "New Block" button
-  - It will automatically choose the namespace you are in right now, unless you are in "all", when you will need to type a namespace
-  - First of all, you need to choose if you want to make a ConfigMap or a Secret
-  - Let's say you want to create a new Secret. An example would be
+- Global variables: Adjust polling intervals for log collection and change active namespace
+- Live Configuration matrix: Manage ConfigMaps and Secrets directly from the interface
 
-  ```sh
-    RESOURCE NAME: postgres-credentials
-    INITIAL KEY PROPERTY: DB_PASSWORD
-    PROPERTY PLAIN-TEXT VALUE: superPassword
-  ```
+![settings](./images/settings.png)
 
-  - After clicking "Create New Secret Object" it will automatically be added to the live edit matrix for ConfigMaps and Secrets
-  - You can also add a new row of key-value if you need more arguments and also delete ones when there's more than one row
+Example of creating a configuration:
+
+- For creating a new one, click on the "New Block" button
+- It will automatically choose the namespace you are in right now, unless you are in "all", when you will need to type a namespace
+- First of all, you need to choose if you want to make a ConfigMap or a Secret
+- Let's say you want to create a new Secret. An example would be
+
+```sh
+  RESOURCE NAME: postgres-credentials
+  INITIAL KEY PROPERTY: DB_PASSWORD
+  PROPERTY PLAIN-TEXT VALUE: superPassword
+```
+
+- After clicking "Create New Secret Object" it will automatically be added to the live edit matrix for ConfigMaps and Secrets
+- You can also add a new row of key-value if you need more arguments and also delete ones when there's more than one row
 
 - Editing ConfigMaps and Secrets
   - Here you can edit existing ones by choosing one and modifying the fields
 
+![configs](./images/configs.png)
+
 ## Pods Table
 
-Here you can see all pods (depending on chosen namespace) with pod name, namespace, status, image, age (since when it's active) and actions.
-Below the container name, there are badges if the pod has a ConfigMap or a Secret set. These are clickable to see the information about them.
-There's also badges for restarts and last cause of crash, if it exists.
-There's also s main error message (if it exists: e.g. ImagePullBackOff).
+![pods](./images/pods_table.png)
 
-Actions:
+A central control hub that tracks pod metadata (name, namespace, status, image and age)
 
-- A delete action that will gracefully terminate the pod (kubectl delete pod pod_name)
-- A terminal action that opens a SSH connection to inside the container. Clicking on this button opens a modal for the terminal on the page
-- A logs action where you can see the logs inside that container
-- A restart action that gracefully restarts the container
+- Contextual badges: Spot attached ConfigMaps or Secrets (clickable for detail inspection), restart counts and crash root cause (e.g. ImagePullBackOff)
+- Interactive actions: Quick action buttons to delete (graceful termination), launch a SSH terminal, open an isolated logs stream or trigger a restart
+
+![config_map_modal](./images/opened_config_map.png)
 
 ## Audit Table
 
-Here you can see 2 tabs:
+Splits administrative tracking into three data layers:
 
-- Active clusters logs (db), where logs paginated with search and filtes for severity. You can also set how many logs per page you can see.
-- History clusters failures logs (redis), where there are logs stored from more than 2 hours (how long Kubernetes will store them)
+- Active clusters logs (PostgreSQL DB): standard searchable logs with paginated tables and filtes for severity. You can also set how many logs per page you can see.
+
+![db_audit](./images/db_audit.png)
+
+- Historical clusters failures logs (Redis cache): deep archive tracking cluster faults that can be older than 2 hours, saving long-term failure trends
+
+![redis_audit](./images/redis_audit.png)
+
+- Topology map: showing a layout map of the cluster (ingress, service and deployment nodes) with clickable nodes to show details. For deployments, you can restart or see logs too
+  ![topology](./images/topology_map.png)
 
 ## Hardware metrics
 
-Used a Kubernetes metrics server to get hardware metrics over running pods.
+This is powered by a local Kubernetes metrics server to get hardware metrics over running pods.
 
 I used:
 
@@ -145,8 +220,18 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 ```
 
-On this page there are 3 tabs:
+The page has a header with two main components:
 
-- on one there is a live table with metrics over pods with cpu load, RAM allocation NVIDIA GPU COMPUTE and status
-- on the second one they are live spikelines on history of hardware metrics
-- on the thrid one, they are charts for CPU and Memory usage from the time it started (usually first time opening the app) to present. These are stored in Redis
+- Summary of consumtion: at the top of the page, there is the number of managed pods, aggregated CPU load, total RAM Allocation and GPU compute (avg utilization)
+- Hog resources: top 3 pods that use the most CPU and most Memory
+
+This page has three separate analytical tabs:
+
+- Live table: real time metrics breakdown over pods analyzing cpu load, RAM allocation, NVIDIA GPU COMPUTE and telemetry health
+  ![live_metrics](./images/live_metrics.png)
+
+- Sparklines: live micro spikelines charts that outline sudden computational trajectory on immediate history trends
+  ![sparklines](./images/sparklines.png)
+
+- Long-term charts: historical redis backed charts tracing CPU and Memory usage from the time it was initialized to present
+  ![charts](./images/charts.png)
