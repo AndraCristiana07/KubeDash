@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import SearchIcon from "@mui/icons-material/Search";
 import LiveIncidentStreamPanel from "./LiveIncidentsPanel";
+import ClusterTopologyView from "./ClusterTopologyView";
 
 interface AuditLogEntry {
   id: number;
@@ -21,7 +22,9 @@ export default function AuditLogView({
   goApiUrl,
   activeNamespace,
 }: AuditLogViewProps) {
-  const [activeTab, setActiveTab] = useState<"audit" | "incidents">("audit");
+  const [activeTab, setActiveTab] = useState<
+    "audit" | "incidents" | "topology"
+  >("audit");
 
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -100,6 +103,16 @@ export default function AuditLogView({
             }`}
           >
             Live Incident Recorder (Redis)
+          </button>
+          <button
+            onClick={() => setActiveTab("topology")}
+            className={`px-4 py-2 border-t border-x rounded-t-lg transition-all font-bold tracking-wide cursor-pointer ${
+              activeTab === "topology"
+                ? "bg-white border-[#E7E1B1] text-[#0D530E] relative z-10 shadow-2xs"
+                : "bg-[#E7E1B1]/20 border-transparent text-slate-500 hover:bg-[#E7E1B1]/40"
+            }`}
+          >
+            Structural Cluster Topology Tree Map
           </button>
         </div>
       </div>{" "}
@@ -272,8 +285,13 @@ export default function AuditLogView({
             </div>
           </div>
         </>
-      ) : (
+      ) : activeTab === "incidents" ? (
         <LiveIncidentStreamPanel
+          goApiUrl={goApiUrl}
+          activeNamespace={activeNamespace}
+        />
+      ) : (
+        <ClusterTopologyView
           goApiUrl={goApiUrl}
           activeNamespace={activeNamespace}
         />

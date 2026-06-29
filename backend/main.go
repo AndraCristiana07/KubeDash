@@ -236,6 +236,7 @@ func main() {
 		api.POST("/cluster/manifests/apply", applyClusterManifest)
 		api.GET("/cluster/metrics/history", getMetricsHistory)
 		api.GET("/cluster/incidents", getClusterIncidents)
+		api.GET("/cluster/topology", getClusterTopology)
 	}
 
 	if err := r.Run(":8080"); err != nil {
